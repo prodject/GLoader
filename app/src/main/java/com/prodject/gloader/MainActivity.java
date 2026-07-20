@@ -88,7 +88,7 @@ public final class MainActivity extends Activity {
         scroll.addView(root, new ScrollView.LayoutParams(-1, -2));
 
         ImageView logo = new ImageView(this);
-        logo.setImageResource(com.prodject.gloader.R.drawable.ic_g_foreground);
+        logo.setImageResource(com.prodject.gloader.R.drawable.ic_g_3d);
         root.addView(logo, sized(104, 104));
 
         TextView title = text("GLoader", 32, true);
