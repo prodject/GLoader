@@ -38,7 +38,7 @@ If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the already installed `
 ## Usage
 
 1. Connect a USB drive containing APK files and launch GLoader.
-2. Open **Installer**. GLoader automatically scans accessible internal shared storage and connected removable storage volumes.
+2. Open **Installer**. GLoader automatically scans accessible internal shared storage and connected removable storage volumes, then lets you switch the results between internal and external APKs.
 3. Select **Install** next to a detected APK, or use **Select APK** to choose a file manually.
 4. On first use, Android may ask you to grant all-files access and allow installation from this source.
 

@@ -47,8 +47,10 @@ import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -81,9 +83,20 @@ public final class MainActivity extends Activity {
     private final ArrayDeque<String> cleanupQueue = new ArrayDeque<>();
     private boolean cleanupSequenceActive;
     private boolean uninstallSelfAfterCleanup;
+    private boolean apkFilterExternalOnly;
     private boolean appsFilterTrackedOnly;
     private int appsRenderGeneration;
     private int currentScreen;
+
+    private static final class ApkEntry {
+        final File file;
+        final boolean external;
+
+        ApkEntry(File file, boolean external) {
+            this.file = file;
+            this.external = external;
+        }
+    }
 
     private static final class ReleaseInfo {
         final String version;
@@ -269,23 +282,23 @@ public final class MainActivity extends Activity {
         progress.setVisibility(View.VISIBLE);
         status.setText("Searching device storage and USB drives for APK files…");
         worker.execute(() -> {
-            List<File> apks = new ArrayList<>();
+            Map<String, ApkEntry> apks = new LinkedHashMap<>();
             Set<String> visited = new HashSet<>();
-            Set<String> foundPaths = new HashSet<>();
 
-            addSearchRoot(Environment.getExternalStorageDirectory(), apks, visited, foundPaths);
+            addSearchRoot(Environment.getExternalStorageDirectory(), false, apks, visited);
             for (File root : getExternalFilesDirs(null)) {
-                addSearchRoot(sharedStorageRoot(root), apks, visited, foundPaths);
+                addSearchRoot(sharedStorageRoot(root), true, apks, visited);
             }
 
             StorageManager manager = getSystemService(StorageManager.class);
             for (StorageVolume volume : manager.getStorageVolumes()) {
                 File root = volume.getDirectory();
-                addSearchRoot(root, apks, visited, foundPaths);
+                addSearchRoot(root, volume.isRemovable(), apks, visited);
             }
-            Collections.sort(apks, Comparator.comparing(File::getName,
+            List<ApkEntry> entries = new ArrayList<>(apks.values());
+            Collections.sort(entries, Comparator.comparing(entry -> entry.file.getName(),
                     String.CASE_INSENSITIVE_ORDER));
-            runOnUiThread(() -> showResults(apks));
+            runOnUiThread(() -> showResults(entries));
         });
     }
 
@@ -300,7 +313,8 @@ public final class MainActivity extends Activity {
         return appExternalDir;
     }
 
-    private void addSearchRoot(File root, List<File> apks, Set<String> visited, Set<String> foundPaths) {
+    private void addSearchRoot(File root, boolean external, Map<String, ApkEntry> apks,
+            Set<String> visited) {
         if (root == null || !root.canRead()) return;
         String path;
         try {
@@ -308,16 +322,16 @@ public final class MainActivity extends Activity {
         } catch (Exception ignored) {
             path = root.getAbsolutePath();
         }
-        if (visited.add(path)) findApks(root, apks, foundPaths, 0);
+        if (visited.add(path)) findApks(root, external, apks, 0);
     }
 
-    private void findApks(File directory, List<File> found, Set<String> foundPaths, int depth) {
+    private void findApks(File directory, boolean external, Map<String, ApkEntry> found, int depth) {
         if (depth > 12 || found.size() >= 500) return;
         File[] children = directory.listFiles();
         if (children == null) return;
         for (File child : children) {
             if (child.isDirectory()) {
-                findApks(child, found, foundPaths, depth + 1);
+                findApks(child, external, found, depth + 1);
             } else if (child.getName().toLowerCase(Locale.ROOT).endsWith(".apk")) {
                 String path;
                 try {
@@ -325,12 +339,15 @@ public final class MainActivity extends Activity {
                 } catch (Exception ignored) {
                     path = child.getAbsolutePath();
                 }
-                if (foundPaths.add(path)) found.add(child);
+                ApkEntry existing = found.get(path);
+                if (existing == null || (!existing.external && external)) {
+                    found.put(path, new ApkEntry(child, external));
+                }
             }
         }
     }
 
-    private void showResults(List<File> apks) {
+    private void showResults(List<ApkEntry> apks) {
         progress.setVisibility(View.GONE);
         if (apks.isEmpty()) {
             status.setText("No APK files found. Select a file manually or grant storage access.");
@@ -341,8 +358,66 @@ public final class MainActivity extends Activity {
             }
             return;
         }
-        status.setText("APK files found: " + apks.size());
-        for (File apk : apks) addApk(apk);
+        int internalCount = 0;
+        int externalCount = 0;
+        for (ApkEntry apk : apks) {
+            if (apk.external) externalCount++;
+            else internalCount++;
+        }
+        addApkSourceFilter(apks, internalCount, externalCount);
+        showFilteredApks(apks, internalCount, externalCount);
+    }
+
+    private void addApkSourceFilter(List<ApkEntry> apks, int internalCount, int externalCount) {
+        LinearLayout filters = new LinearLayout(this);
+        filters.setOrientation(LinearLayout.HORIZONTAL);
+        filters.setPadding(dp(5), dp(5), dp(5), dp(5));
+        filters.setBackground(cardBackground());
+        filters.setElevation(dp(2));
+
+        Button internal = menuButton("Internal (" + internalCount + ")");
+        Button external = menuButton("External (" + externalCount + ")");
+        internal.setOnClickListener(v -> {
+            apkFilterExternalOnly = false;
+            showFilteredApks(apks, internalCount, externalCount);
+        });
+        external.setOnClickListener(v -> {
+            apkFilterExternalOnly = true;
+            showFilteredApks(apks, internalCount, externalCount);
+        });
+        filters.addView(internal, menuParams());
+        filters.addView(external, menuParams());
+        results.addView(filters, matchWrap(4, 8));
+    }
+
+    private void showFilteredApks(List<ApkEntry> apks, int internalCount, int externalCount) {
+        while (results.getChildCount() > 1) results.removeViewAt(1);
+        int selectedCount = apkFilterExternalOnly ? externalCount : internalCount;
+        status.setText((apkFilterExternalOnly ? "External" : "Internal")
+                + " APK files found: " + selectedCount
+                + " (total: " + apks.size() + ")");
+        selectApkSourceFilter((LinearLayout) results.getChildAt(0));
+        if (selectedCount == 0) {
+            TextView empty = text(apkFilterExternalOnly
+                    ? "No APK files found on connected external storage."
+                    : "No APK files found in internal shared storage.", 15, false);
+            empty.setTextColor(COLOR_SECONDARY_TEXT);
+            empty.setGravity(Gravity.CENTER);
+            results.addView(empty, matchWrap(8, 8));
+            return;
+        }
+        for (ApkEntry apk : apks) {
+            if (apk.external == apkFilterExternalOnly) addApk(apk.file);
+        }
+    }
+
+    private void selectApkSourceFilter(LinearLayout filters) {
+        for (int i = 0; i < filters.getChildCount(); i++) {
+            Button tab = (Button) filters.getChildAt(i);
+            boolean active = (i == 1) == apkFilterExternalOnly;
+            tab.setTextColor(active ? Color.WHITE : COLOR_PRIMARY);
+            tab.setBackground(materialButtonBackground(active));
+        }
     }
 
     private void addApk(File apk) {
