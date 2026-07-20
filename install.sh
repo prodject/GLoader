@@ -6,11 +6,12 @@ REMOTE_APK="/data/local/tmp/GLoader.apk"
 APK="${1:-}"
 
 if [ -z "$APK" ]; then
-    APK=$(find "$(dirname "$0")/app/build/outputs/apk" -type f -name '*.apk' 2>/dev/null | head -n 1 || true)
+    APK=$(ls -1t ./GLoader-*.apk 2>/dev/null | head -n 1 || true)
 fi
 
 if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-    echo "APK не найден. Использование: ./install.sh /путь/GLoader.apk" >&2
+    echo "APK не найден. Поместите GLoader-*.apk в текущую папку или укажите путь:" >&2
+    echo "./install.sh /путь/GLoader-1.X.apk" >&2
     exit 1
 fi
 
