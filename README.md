@@ -6,7 +6,7 @@
 
 **English** · [Русский](README_RU.MD)
 
-GLoader is a compact initial APK installer and cleanup helper for the Geely Citiray head unit running Android 11 or newer. It automatically searches connected removable USB drives for `.apk` files, displays everything it finds, lets the user select an APK manually through the system file picker, lists installed applications, and can remove applications previously installed through GLoader.
+GLoader is a compact initial APK installer and cleanup helper for the Geely Citiray head unit running Android 11 or newer. It automatically searches internal shared storage and connected removable USB drives for `.apk` files, displays everything it finds, lets the user select an APK manually through the system file picker, lists installed applications, and can remove applications previously installed through GLoader.
 
 The interface is designed for both phone displays, including the Pixel 6 Pro, and the large 13.2-inch vertical head-unit screen. The project uses only native Android APIs and no heavy third-party libraries, keeping the resulting APK small enough to install during a short ADB availability window.
 
@@ -19,7 +19,7 @@ chmod +x install.sh
 ./install.sh ./GLoader-1.X.apk
 ```
 
-The script waits for the device, quickly copies the APK to `/data/local/tmp`, runs `pm install`, attempts to grant external-storage and package-installation access through `appops`, removes the temporary file, and launches GLoader. Whether the `appops` commands succeed depends on the permissions available to the ADB shell in the particular head-unit firmware.
+The script waits for the device, quickly copies the APK to `/data/local/tmp`, runs `pm install`, attempts to grant external-storage and package-installation access through `appops`, also attempts the legacy read-storage grant, removes the temporary file, and launches GLoader. Whether the `appops` and `pm grant` commands succeed depends on the permissions available to the ADB shell in the particular head-unit firmware.
 
 GitHub Actions release APKs are signed with a checked-in debug release key at `app/keystore/gloader-release-debug.p12`, so future Actions builds are update-compatible with each other. Do not use this key for Play Store or private production distribution.
 
@@ -38,7 +38,7 @@ If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the already installed `
 ## Usage
 
 1. Connect a USB drive containing APK files and launch GLoader.
-2. Open **Installer**. GLoader automatically scans all accessible removable storage volumes.
+2. Open **Installer**. GLoader automatically scans accessible internal shared storage and connected removable storage volumes.
 3. Select **Install** next to a detected APK, or use **Select APK** to choose a file manually.
 4. On first use, Android may ask you to grant all-files access and allow installation from this source.
 

@@ -175,9 +175,9 @@ public final class MainActivity extends Activity {
     private void showInstallerScreen() {
         currentScreen = 0;
         selectTab(installerTab);
-        prepareScreen("Install APKs from USB storage");
+        prepareScreen("Install APKs from device storage");
 
-        TextView subtitle = text("Install APKs from USB storage", 16, false);
+        TextView subtitle = text("Install APKs from device storage and USB drives", 16, false);
         subtitle.setTextColor(COLOR_SECONDARY_TEXT);
         subtitle.setGravity(Gravity.CENTER);
         screen.addView(subtitle, matchWrap(0, 18));
@@ -219,15 +219,21 @@ public final class MainActivity extends Activity {
     private void scanUsb() {
         results.removeAllViews();
         progress.setVisibility(View.VISIBLE);
-        status.setText("Searching USB storage for APK files…");
+        status.setText("Searching device storage and USB drives for APK files…");
         worker.execute(() -> {
             List<File> apks = new ArrayList<>();
+            Set<String> visited = new HashSet<>();
+            Set<String> foundPaths = new HashSet<>();
+
+            addSearchRoot(Environment.getExternalStorageDirectory(), apks, visited, foundPaths);
+            for (File root : getExternalFilesDirs(null)) {
+                addSearchRoot(sharedStorageRoot(root), apks, visited, foundPaths);
+            }
+
             StorageManager manager = getSystemService(StorageManager.class);
             for (StorageVolume volume : manager.getStorageVolumes()) {
                 File root = volume.getDirectory();
-                if (root != null && volume.isRemovable() && root.canRead()) {
-                    findApks(root, apks, 0);
-                }
+                addSearchRoot(root, apks, visited, foundPaths);
             }
             Collections.sort(apks, Comparator.comparing(File::getName,
                     String.CASE_INSENSITIVE_ORDER));
@@ -235,13 +241,44 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void findApks(File directory, List<File> found, int depth) {
+    private File sharedStorageRoot(File appExternalDir) {
+        if (appExternalDir == null) return null;
+        File current = appExternalDir;
+        while (current != null) {
+            File androidDir = new File(current, "Android");
+            if (androidDir.isDirectory()) return current;
+            current = current.getParentFile();
+        }
+        return appExternalDir;
+    }
+
+    private void addSearchRoot(File root, List<File> apks, Set<String> visited, Set<String> foundPaths) {
+        if (root == null || !root.canRead()) return;
+        String path;
+        try {
+            path = root.getCanonicalPath();
+        } catch (Exception ignored) {
+            path = root.getAbsolutePath();
+        }
+        if (visited.add(path)) findApks(root, apks, foundPaths, 0);
+    }
+
+    private void findApks(File directory, List<File> found, Set<String> foundPaths, int depth) {
         if (depth > 12 || found.size() >= 500) return;
         File[] children = directory.listFiles();
         if (children == null) return;
         for (File child : children) {
-            if (child.isDirectory()) findApks(child, found, depth + 1);
-            else if (child.getName().toLowerCase(Locale.ROOT).endsWith(".apk")) found.add(child);
+            if (child.isDirectory()) {
+                findApks(child, found, foundPaths, depth + 1);
+            } else if (child.getName().toLowerCase(Locale.ROOT).endsWith(".apk")) {
+                String path;
+                try {
+                    path = child.getCanonicalPath();
+                } catch (Exception ignored) {
+                    path = child.getAbsolutePath();
+                }
+                if (foundPaths.add(path)) found.add(child);
+            }
         }
     }
 
