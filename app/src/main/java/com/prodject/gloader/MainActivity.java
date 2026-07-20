@@ -325,12 +325,31 @@ public final class MainActivity extends Activity {
                 File root = volume.getDirectory();
                 addSearchRoot(root, volume.isRemovable(), apks, apkFingerprints, visited);
             }
+            addUuidStorageRoots(apks, apkFingerprints, visited);
             scanPersistedUsbTrees(apks, apkFingerprints);
             List<ApkEntry> entries = new ArrayList<>(apks.values());
             Collections.sort(entries, Comparator.comparing(entry -> entry.name,
                     String.CASE_INSENSITIVE_ORDER));
             runOnUiThread(() -> showResults(entries));
         });
+    }
+
+    private void addUuidStorageRoots(Map<String, ApkEntry> apks, Set<String> apkFingerprints,
+            Set<String> visited) {
+        File storage = new File("/storage");
+        File[] roots = storage.listFiles();
+        if (roots == null) return;
+        for (File root : roots) {
+            String name = root.getName();
+            if (root.isDirectory() && looksLikeVolumeUuid(name)) {
+                addSearchRoot(root, true, apks, apkFingerprints, visited);
+            }
+        }
+    }
+
+    private boolean looksLikeVolumeUuid(String name) {
+        return name.matches("(?i)[0-9a-f]{4}-[0-9a-f]{4}")
+                || name.matches("(?i)[0-9a-f]{8}-[0-9a-f]{4}");
     }
 
     private File sharedStorageRoot(File appExternalDir) {
