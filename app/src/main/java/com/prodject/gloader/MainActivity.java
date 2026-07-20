@@ -383,7 +383,7 @@ public final class MainActivity extends Activity {
         for (File child : children) {
             if (child.isDirectory()) {
                 findApks(child, external, found, apkFingerprints, depth + 1);
-            } else if (child.getName().toLowerCase(Locale.ROOT).endsWith(".apk")) {
+            } else if (isInstallableApkName(child.getName())) {
                 String path;
                 try {
                     path = child.getCanonicalPath();
@@ -436,7 +436,7 @@ public final class MainActivity extends Activity {
                 Uri childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id);
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
                     scanDocumentTree(treeUri, childUri, found, apkFingerprints, depth + 1);
-                } else if (name != null && name.toLowerCase(Locale.ROOT).endsWith(".apk")) {
+                } else if (isInstallableApkName(name)) {
                     long size = sizeColumn >= 0 && !cursor.isNull(sizeColumn)
                             ? cursor.getLong(sizeColumn) : -1;
                     ApkEntry entry = new ApkEntry(childUri, name, size, true);
@@ -453,6 +453,13 @@ public final class MainActivity extends Activity {
         return (apk.external ? "external" : "internal") + "|"
                 + apk.name.toLowerCase(Locale.ROOT) + "|"
                 + apk.size;
+    }
+
+    private boolean isInstallableApkName(String name) {
+        if (name == null) return false;
+        return !name.startsWith("._")
+                && !".DS_Store".equals(name)
+                && name.toLowerCase(Locale.ROOT).endsWith(".apk");
     }
 
     private void showResults(List<ApkEntry> apks) {
