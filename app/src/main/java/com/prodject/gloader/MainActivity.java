@@ -467,13 +467,21 @@ public final class MainActivity extends Activity {
         if (apks.isEmpty()) {
             status.setText("No APK files found. Select a file manually or grant storage access.");
             if (!Environment.isExternalStorageManager()) {
+                TextView fileHint = text("Grant internal storage scan access", 13, false);
+                fileHint.setTextColor(COLOR_SECONDARY_TEXT);
+                fileHint.setGravity(Gravity.CENTER);
+                results.addView(fileHint, matchWrap(4, 2));
                 Button access = button("Allow file access", true);
                 access.setOnClickListener(v -> requestFileAccess());
-                results.addView(access, matchWrap(4, 4));
+                results.addView(access, matchWrap(2, 6));
             }
-            Button usbAccess = button("Allow USB scan", false);
+            TextView usbHint = text("Select a USB drive once for automatic future scans", 13, false);
+            usbHint.setTextColor(COLOR_SECONDARY_TEXT);
+            usbHint.setGravity(Gravity.CENTER);
+            results.addView(usbHint, matchWrap(4, 2));
+            Button usbAccess = button("Select USB folder", false);
             usbAccess.setOnClickListener(v -> requestUsbTreeAccess());
-            results.addView(usbAccess, matchWrap(4, 4));
+            results.addView(usbAccess, matchWrap(2, 4));
             return;
         }
         int internalCount = 0;
