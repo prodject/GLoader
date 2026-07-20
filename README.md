@@ -6,7 +6,7 @@
 
 **English** · [Русский](README_RU.MD)
 
-GLoader is a compact initial APK installer for the Geely Citiray head unit running Android 11 or newer. It automatically searches connected removable USB drives for `.apk` files, displays everything it finds, and lets the user select an APK manually through the system file picker.
+GLoader is a compact initial APK installer and cleanup helper for the Geely Citiray head unit running Android 11 or newer. It automatically searches connected removable USB drives for `.apk` files, displays everything it finds, lets the user select an APK manually through the system file picker, lists installed applications, and can remove applications previously installed through GLoader.
 
 The interface is designed for both phone displays, including the Pixel 6 Pro, and the large 13.2-inch vertical head-unit screen. The project uses only native Android APIs and no heavy third-party libraries, keeping the resulting APK small enough to install during a short ADB availability window.
 
@@ -24,11 +24,17 @@ The script waits for the device, quickly copies the APK to `/data/local/tmp`, ru
 ## Usage
 
 1. Connect a USB drive containing APK files and launch GLoader.
-2. GLoader automatically scans all accessible removable storage volumes.
+2. Open **Installer**. GLoader automatically scans all accessible removable storage volumes.
 3. Select **Install** next to a detected APK, or use **Select APK** to choose a file manually.
 4. On first use, Android may ask you to grant all-files access and allow installation from this source.
 
 Android does not permit a regular user application to install APK files silently. Unless GLoader is installed as a system application or configured as a Device Owner, Android's standard installation confirmation remains mandatory.
+
+The **Apps** tab shows installed packages visible to GLoader. User applications can be opened for Android's normal uninstall confirmation flow; protected system packages are shown as non-removable.
+
+The **Cleanup** tab tracks packages that were successfully installed through GLoader. It can request removal of those tracked applications one by one, then optionally request removal of GLoader itself. Android asks for confirmation for every uninstall action. When GLoader is uninstalled, Android also removes GLoader's private app data.
+
+Important limitation: a regular Android application cannot erase system Package Manager records, installation history, or system logs. Cleanup only covers tracked applications, GLoader's own uninstall request, and GLoader's private app data that Android deletes during uninstall.
 
 ## Builds and releases
 
