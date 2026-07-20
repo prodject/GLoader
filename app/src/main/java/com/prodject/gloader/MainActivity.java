@@ -307,11 +307,13 @@ public final class MainActivity extends Activity {
         status.setText("Searching device storage and USB drives for APK files…");
         worker.execute(() -> {
             Map<String, ApkEntry> apks = new LinkedHashMap<>();
+            Set<String> apkFingerprints = new HashSet<>();
             Set<String> visited = new HashSet<>();
 
-            addSearchRoot(Environment.getExternalStorageDirectory(), false, apks, visited);
+            addSearchRoot(Environment.getExternalStorageDirectory(), false, apks,
+                    apkFingerprints, visited);
             for (File root : getExternalFilesDirs(null)) {
-                addSearchRoot(sharedStorageRoot(root), true, apks, visited);
+                addSearchRoot(sharedStorageRoot(root), true, apks, apkFingerprints, visited);
             }
 
             StorageManager manager = getSystemService(StorageManager.class);
@@ -321,9 +323,9 @@ public final class MainActivity extends Activity {
                     continue;
                 }
                 File root = volume.getDirectory();
-                addSearchRoot(root, volume.isRemovable(), apks, visited);
+                addSearchRoot(root, volume.isRemovable(), apks, apkFingerprints, visited);
             }
-            scanPersistedUsbTrees(apks);
+            scanPersistedUsbTrees(apks, apkFingerprints);
             List<ApkEntry> entries = new ArrayList<>(apks.values());
             Collections.sort(entries, Comparator.comparing(entry -> entry.name,
                     String.CASE_INSENSITIVE_ORDER));
@@ -343,7 +345,7 @@ public final class MainActivity extends Activity {
     }
 
     private void addSearchRoot(File root, boolean external, Map<String, ApkEntry> apks,
-            Set<String> visited) {
+            Set<String> apkFingerprints, Set<String> visited) {
         if (root == null || !root.canRead()) return;
         String path;
         try {
@@ -351,16 +353,17 @@ public final class MainActivity extends Activity {
         } catch (Exception ignored) {
             path = root.getAbsolutePath();
         }
-        if (visited.add(path)) findApks(root, external, apks, 0);
+        if (visited.add(path)) findApks(root, external, apks, apkFingerprints, 0);
     }
 
-    private void findApks(File directory, boolean external, Map<String, ApkEntry> found, int depth) {
+    private void findApks(File directory, boolean external, Map<String, ApkEntry> found,
+            Set<String> apkFingerprints, int depth) {
         if (depth > 12 || found.size() >= 500) return;
         File[] children = directory.listFiles();
         if (children == null) return;
         for (File child : children) {
             if (child.isDirectory()) {
-                findApks(child, external, found, depth + 1);
+                findApks(child, external, found, apkFingerprints, depth + 1);
             } else if (child.getName().toLowerCase(Locale.ROOT).endsWith(".apk")) {
                 String path;
                 try {
@@ -368,28 +371,29 @@ public final class MainActivity extends Activity {
                 } catch (Exception ignored) {
                     path = child.getAbsolutePath();
                 }
-                ApkEntry existing = found.get(path);
-                if (existing == null || (!existing.external && external)) {
-                    found.put(path, new ApkEntry(child, external));
+                ApkEntry entry = new ApkEntry(child, external);
+                String fingerprint = apkFingerprint(entry);
+                if (apkFingerprints.add(fingerprint)) {
+                    found.put(path, entry);
                 }
             }
         }
     }
 
-    private void scanPersistedUsbTrees(Map<String, ApkEntry> found) {
+    private void scanPersistedUsbTrees(Map<String, ApkEntry> found, Set<String> apkFingerprints) {
         for (String value : getUsbTreeUris()) {
             try {
                 Uri treeUri = Uri.parse(value);
                 String documentId = DocumentsContract.getTreeDocumentId(treeUri);
                 Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
-                scanDocumentTree(treeUri, documentUri, found, 0);
+                scanDocumentTree(treeUri, documentUri, found, apkFingerprints, 0);
             } catch (Exception ignored) {
             }
         }
     }
 
     private void scanDocumentTree(Uri treeUri, Uri directoryUri, Map<String, ApkEntry> found,
-            int depth) {
+            Set<String> apkFingerprints, int depth) {
         if (depth > 12 || found.size() >= 500) return;
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri,
                 DocumentsContract.getDocumentId(directoryUri));
@@ -412,15 +416,24 @@ public final class MainActivity extends Activity {
                 String mime = cursor.getString(mimeColumn);
                 Uri childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id);
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
-                    scanDocumentTree(treeUri, childUri, found, depth + 1);
+                    scanDocumentTree(treeUri, childUri, found, apkFingerprints, depth + 1);
                 } else if (name != null && name.toLowerCase(Locale.ROOT).endsWith(".apk")) {
                     long size = sizeColumn >= 0 && !cursor.isNull(sizeColumn)
                             ? cursor.getLong(sizeColumn) : -1;
-                    found.put(childUri.toString(), new ApkEntry(childUri, name, size, true));
+                    ApkEntry entry = new ApkEntry(childUri, name, size, true);
+                    if (apkFingerprints.add(apkFingerprint(entry))) {
+                        found.put(childUri.toString(), entry);
+                    }
                 }
             }
         } catch (Exception ignored) {
         }
+    }
+
+    private String apkFingerprint(ApkEntry apk) {
+        return (apk.external ? "external" : "internal") + "|"
+                + apk.name.toLowerCase(Locale.ROOT) + "|"
+                + apk.size;
     }
 
     private void showResults(List<ApkEntry> apks) {
