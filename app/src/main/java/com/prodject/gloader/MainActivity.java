@@ -12,6 +12,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
@@ -23,6 +24,7 @@ import android.os.Environment;
 import android.os.Build;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
+import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
@@ -63,11 +65,13 @@ import org.json.JSONObject;
 public final class MainActivity extends Activity {
     private static final int PICK_APK = 10;
     private static final int UNINSTALL_PACKAGE = 11;
+    private static final int PICK_USB_TREE = 12;
     private static final String INSTALL_ACTION = "com.prodject.gloader.INSTALL_STATUS";
     private static final String LATEST_RELEASE_API =
             "https://api.github.com/repos/prodject/GLoader/releases/latest";
     private static final String PREFS = "gloader_packages";
     private static final String TRACKED_PACKAGES = "installed_packages";
+    private static final String USB_TREE_URIS = "usb_tree_uris";
     private static final int COLOR_BACKGROUND = Color.rgb(245, 246, 248);
     private static final int COLOR_SURFACE = Color.WHITE;
     private static final int COLOR_PRIMARY = Color.rgb(20, 22, 26);
@@ -92,10 +96,24 @@ public final class MainActivity extends Activity {
 
     private static final class ApkEntry {
         final File file;
+        final Uri uri;
+        final String name;
+        final long size;
         final boolean external;
 
         ApkEntry(File file, boolean external) {
             this.file = file;
+            this.uri = null;
+            this.name = file.getName();
+            this.size = file.length();
+            this.external = external;
+        }
+
+        ApkEntry(Uri uri, String name, long size, boolean external) {
+            this.file = null;
+            this.uri = uri;
+            this.name = name;
+            this.size = size;
             this.external = external;
         }
     }
@@ -233,6 +251,10 @@ public final class MainActivity extends Activity {
         refresh.setOnClickListener(v -> scanUsb());
         actions.addView(refresh, actionParams());
 
+        Button usbAccess = button("Allow USB scan", false);
+        usbAccess.setOnClickListener(v -> requestUsbTreeAccess());
+        actions.addView(usbAccess, actionParams());
+
         addResultArea();
         scanUsb();
     }
@@ -294,11 +316,16 @@ public final class MainActivity extends Activity {
 
             StorageManager manager = getSystemService(StorageManager.class);
             for (StorageVolume volume : manager.getStorageVolumes()) {
+                if (volume.isRemovable()
+                        && !Environment.MEDIA_MOUNTED.equals(volume.getState())) {
+                    continue;
+                }
                 File root = volume.getDirectory();
                 addSearchRoot(root, volume.isRemovable(), apks, visited);
             }
+            scanPersistedUsbTrees(apks);
             List<ApkEntry> entries = new ArrayList<>(apks.values());
-            Collections.sort(entries, Comparator.comparing(entry -> entry.file.getName(),
+            Collections.sort(entries, Comparator.comparing(entry -> entry.name,
                     String.CASE_INSENSITIVE_ORDER));
             runOnUiThread(() -> showResults(entries));
         });
@@ -349,6 +376,53 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void scanPersistedUsbTrees(Map<String, ApkEntry> found) {
+        for (String value : getUsbTreeUris()) {
+            try {
+                Uri treeUri = Uri.parse(value);
+                String documentId = DocumentsContract.getTreeDocumentId(treeUri);
+                Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
+                scanDocumentTree(treeUri, documentUri, found, 0);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void scanDocumentTree(Uri treeUri, Uri directoryUri, Map<String, ApkEntry> found,
+            int depth) {
+        if (depth > 12 || found.size() >= 500) return;
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri,
+                DocumentsContract.getDocumentId(directoryUri));
+        String[] projection = {
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE
+        };
+        try (Cursor cursor = getContentResolver().query(childrenUri, projection,
+                null, null, null)) {
+            if (cursor == null) return;
+            int idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+            int nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            int mimeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE);
+            int sizeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE);
+            while (cursor.moveToNext()) {
+                String id = cursor.getString(idColumn);
+                String name = cursor.getString(nameColumn);
+                String mime = cursor.getString(mimeColumn);
+                Uri childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                    scanDocumentTree(treeUri, childUri, found, depth + 1);
+                } else if (name != null && name.toLowerCase(Locale.ROOT).endsWith(".apk")) {
+                    long size = sizeColumn >= 0 && !cursor.isNull(sizeColumn)
+                            ? cursor.getLong(sizeColumn) : -1;
+                    found.put(childUri.toString(), new ApkEntry(childUri, name, size, true));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     private void showResults(List<ApkEntry> apks) {
         progress.setVisibility(View.GONE);
         if (apks.isEmpty()) {
@@ -358,6 +432,9 @@ public final class MainActivity extends Activity {
                 access.setOnClickListener(v -> requestFileAccess());
                 results.addView(access, matchWrap(4, 4));
             }
+            Button usbAccess = button("Allow USB scan", false);
+            usbAccess.setOnClickListener(v -> requestUsbTreeAccess());
+            results.addView(usbAccess, matchWrap(4, 4));
             return;
         }
         int internalCount = 0;
@@ -409,7 +486,7 @@ public final class MainActivity extends Activity {
             return;
         }
         for (ApkEntry apk : apks) {
-            if (apk.external == apkFilterExternalOnly) addApk(apk.file);
+            if (apk.external == apkFilterExternalOnly) addApk(apk);
         }
     }
 
@@ -422,7 +499,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void addApk(File apk) {
+    private void addApk(ApkEntry apk) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(getResources().getConfiguration().screenWidthDp >= 600
                 ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
@@ -430,7 +507,7 @@ public final class MainActivity extends Activity {
         row.setPadding(dp(18), dp(14), dp(12), dp(14));
         row.setBackground(cardBackground());
         row.setElevation(dp(2));
-        TextView info = text(apk.getName() + "\n" + readableSize(apk.length()), 16, true);
+        TextView info = text(apk.name + "\n" + readableSize(apk.size), 16, true);
         info.setLineSpacing(0, 1.15f);
         info.setTextColor(COLOR_PRIMARY);
         boolean wide = getResources().getConfiguration().screenWidthDp >= 600;
@@ -440,7 +517,7 @@ public final class MainActivity extends Activity {
         if (!wide) infoParams.setMargins(0, 0, 0, dp(10));
         row.addView(info, infoParams);
         Button install = button("Install", true);
-        install.setOnClickListener(v -> installFile(apk));
+        install.setOnClickListener(v -> installApk(apk));
         row.addView(install, new LinearLayout.LayoutParams(wide ? -2 : -1, dp(52)));
         results.addView(row, matchWrap(5, 5));
     }
@@ -667,6 +744,7 @@ public final class MainActivity extends Activity {
     private File findWritableRemovableRoot() {
         StorageManager manager = getSystemService(StorageManager.class);
         for (StorageVolume volume : manager.getStorageVolumes()) {
+            if (!Environment.MEDIA_MOUNTED.equals(volume.getState())) continue;
             File root = volume.getDirectory();
             if (volume.isRemovable() && root != null && root.canRead() && root.canWrite()) {
                 return root;
@@ -786,6 +864,18 @@ public final class MainActivity extends Activity {
                 .getStringSet(TRACKED_PACKAGES, Collections.emptySet()));
     }
 
+    private Set<String> getUsbTreeUris() {
+        return new HashSet<>(getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getStringSet(USB_TREE_URIS, Collections.emptySet()));
+    }
+
+    private void rememberUsbTreeUri(Uri treeUri) {
+        Set<String> uris = getUsbTreeUris();
+        uris.add(treeUri.toString());
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putStringSet(USB_TREE_URIS, uris).apply();
+    }
+
     private void trackPackage(String packageName) {
         Set<String> packages = getTrackedPackages();
         packages.add(packageName);
@@ -805,6 +895,15 @@ public final class MainActivity extends Activity {
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/vnd.android.package-archive");
         startActivityForResult(intent, PICK_APK);
+    }
+
+    private void requestUsbTreeAccess() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        startActivityForResult(intent, PICK_USB_TREE);
     }
 
     private void checkForUpdate() {
@@ -908,6 +1007,18 @@ public final class MainActivity extends Activity {
         super.onActivityResult(request, result, data);
         if (request == PICK_APK && result == RESULT_OK && data != null && data.getData() != null) {
             installUri(data.getData(), "selected.apk");
+        } else if (request == PICK_USB_TREE && result == RESULT_OK
+                && data != null && data.getData() != null) {
+            Uri treeUri = data.getData();
+            int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            try {
+                getContentResolver().takePersistableUriPermission(treeUri, flags);
+            } catch (SecurityException ignored) {
+            }
+            rememberUsbTreeUri(treeUri);
+            toast("USB scan access saved");
+            if (currentScreen == 0) scanUsb();
         } else if (request == UNINSTALL_PACKAGE) {
             String packageName = pendingUninstallPackage;
             pendingUninstallPackage = null;
@@ -936,6 +1047,11 @@ public final class MainActivity extends Activity {
             try { install(new FileInputStream(apk), apk.getName(), apk.length()); }
             catch (Exception e) { toast("Could not open APK: " + e.getMessage()); }
         });
+    }
+
+    private void installApk(ApkEntry apk) {
+        if (apk.file != null) installFile(apk.file);
+        else installUri(apk.uri, apk.name);
     }
 
     private void installUri(Uri uri, String name) {
@@ -1091,6 +1207,7 @@ public final class MainActivity extends Activity {
     }
 
     private String readableSize(long bytes) {
+        if (bytes < 0) return "Unknown size";
         if (bytes < 1024 * 1024) return Math.max(1, bytes / 1024) + " KB";
         return String.format(Locale.US, "%.1f MB", bytes / 1048576f);
     }
