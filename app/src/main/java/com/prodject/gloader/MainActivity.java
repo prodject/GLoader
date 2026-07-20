@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
@@ -29,6 +30,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -70,7 +72,28 @@ public final class MainActivity extends Activity {
     private final ArrayDeque<String> cleanupQueue = new ArrayDeque<>();
     private boolean cleanupSequenceActive;
     private boolean uninstallSelfAfterCleanup;
+    private boolean appsFilterTrackedOnly;
+    private int appsRenderGeneration;
     private int currentScreen;
+
+    private static final class AppEntry {
+        final String label;
+        final String packageName;
+        final Drawable icon;
+        final boolean system;
+        final boolean self;
+        final boolean tracked;
+
+        AppEntry(String label, String packageName, Drawable icon,
+                boolean system, boolean self, boolean tracked) {
+            this.label = label;
+            this.packageName = packageName;
+            this.icon = icon;
+            this.system = system;
+            this.self = self;
+            this.tracked = tracked;
+        }
+    }
 
     private final BroadcastReceiver installReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -271,32 +294,76 @@ public final class MainActivity extends Activity {
         hint.setTextColor(COLOR_SECONDARY_TEXT);
         hint.setGravity(Gravity.CENTER);
         screen.addView(hint, matchWrap(0, 14));
+
+        Switch trackedOnly = new Switch(this);
+        trackedOnly.setText("Show GLoader installs only");
+        trackedOnly.setTextSize(14);
+        trackedOnly.setTextColor(COLOR_PRIMARY);
+        trackedOnly.setChecked(appsFilterTrackedOnly);
+        trackedOnly.setPadding(dp(12), 0, dp(12), 0);
+        trackedOnly.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            appsFilterTrackedOnly = isChecked;
+            showAppsScreen();
+        });
+        screen.addView(trackedOnly, matchWrap(0, 8));
+
         addResultArea();
+        int renderGeneration = ++appsRenderGeneration;
         status.setText("Loading applications…");
         worker.execute(() -> {
             List<ApplicationInfo> applications;
             PackageManager pm = getPackageManager();
+            Set<String> tracked = getTrackedPackages();
             if (Build.VERSION.SDK_INT >= 33) {
                 applications = pm.getInstalledApplications(
                         PackageManager.ApplicationInfoFlags.of(0));
             } else {
                 applications = pm.getInstalledApplications(0);
             }
-            applications.sort(Comparator.comparing(
-                    app -> app.loadLabel(pm).toString(), String.CASE_INSENSITIVE_ORDER));
-            runOnUiThread(() -> showApplications(applications));
+            List<AppEntry> entries = new ArrayList<>();
+            for (ApplicationInfo app : applications) {
+                boolean self = getPackageName().equals(app.packageName);
+                boolean system = (app.flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                        && (app.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
+                entries.add(new AppEntry(app.loadLabel(pm).toString(), app.packageName,
+                        app.loadIcon(pm), system, self, tracked.contains(app.packageName)));
+            }
+            entries.sort(Comparator.comparing(app -> app.label, String.CASE_INSENSITIVE_ORDER));
+            runOnUiThread(() -> showApplications(entries, renderGeneration));
         });
     }
 
-    private void showApplications(List<ApplicationInfo> applications) {
-        if (currentScreen != 1) return;
+    private void showApplications(List<AppEntry> applications, int renderGeneration) {
+        if (currentScreen != 1 || renderGeneration != appsRenderGeneration) return;
         progress.setVisibility(View.GONE);
-        status.setText("Applications found: " + applications.size());
-        for (ApplicationInfo app : applications) addApplication(app);
+        List<AppEntry> visible = new ArrayList<>();
+        for (AppEntry app : applications) {
+            if (!appsFilterTrackedOnly || app.tracked) visible.add(app);
+        }
+        String suffix = appsFilterTrackedOnly ? " installed through GLoader" : "";
+        status.setText("Applications found: " + visible.size() + suffix);
+        if (visible.isEmpty()) {
+            TextView empty = text(appsFilterTrackedOnly
+                    ? "No tracked GLoader-installed applications are currently installed."
+                    : "No applications found.", 15, false);
+            empty.setTextColor(COLOR_SECONDARY_TEXT);
+            empty.setGravity(Gravity.CENTER);
+            results.addView(empty, matchWrap(8, 8));
+            return;
+        }
+        addApplicationBatch(visible, 0, renderGeneration);
     }
 
-    private void addApplication(ApplicationInfo app) {
-        PackageManager pm = getPackageManager();
+    private void addApplicationBatch(List<AppEntry> applications, int start, int renderGeneration) {
+        if (currentScreen != 1 || renderGeneration != appsRenderGeneration) return;
+        int end = Math.min(start + 18, applications.size());
+        for (int i = start; i < end; i++) addApplication(applications.get(i));
+        if (end < applications.size()) {
+            results.post(() -> addApplicationBatch(applications, end, renderGeneration));
+        }
+    }
+
+    private void addApplication(AppEntry app) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -305,15 +372,15 @@ public final class MainActivity extends Activity {
         row.setElevation(dp(2));
 
         ImageView icon = new ImageView(this);
-        icon.setImageDrawable(app.loadIcon(pm));
-        icon.setContentDescription(app.loadLabel(pm));
+        icon.setImageDrawable(app.icon);
+        icon.setContentDescription(app.label);
         LinearLayout.LayoutParams iconParams = sized(48, 48);
         iconParams.setMargins(0, 0, dp(14), 0);
         row.addView(icon, iconParams);
 
         LinearLayout labels = new LinearLayout(this);
         labels.setOrientation(LinearLayout.VERTICAL);
-        TextView name = text(app.loadLabel(pm).toString(), 16, true);
+        TextView name = text(app.label, 16, true);
         labels.addView(name, new LinearLayout.LayoutParams(-1, -2));
         TextView packageName = text(app.packageName, 12, false);
         packageName.setTextColor(COLOR_SECONDARY_TEXT);
@@ -321,13 +388,11 @@ public final class MainActivity extends Activity {
         labels.addView(packageName, new LinearLayout.LayoutParams(-1, -2));
         row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
 
-        boolean isSelf = getPackageName().equals(app.packageName);
-        boolean system = (app.flags & ApplicationInfo.FLAG_SYSTEM) != 0
-                && (app.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
-        Button action = button(isSelf ? "Current" : system ? "System" : "Uninstall", !system && !isSelf);
-        action.setEnabled(!system && !isSelf);
-        if (system || isSelf) action.setAlpha(0.58f);
-        if (!system && !isSelf) action.setOnClickListener(v -> uninstallPackage(app.packageName));
+        Button action = button(app.self ? "Current" : app.system ? "System" : "Uninstall",
+                !app.system && !app.self);
+        action.setEnabled(!app.system && !app.self);
+        if (app.system || app.self) action.setAlpha(0.58f);
+        if (!app.system && !app.self) action.setOnClickListener(v -> uninstallPackage(app.packageName));
         LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, dp(48));
         actionParams.setMargins(dp(10), 0, 0, 0);
         row.addView(action, actionParams);
@@ -383,12 +448,22 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmTrackedCleanup(boolean uninstallSelfAfterward) {
-        String message = uninstallSelfAfterward
-                ? "Android will ask you to confirm removal of every tracked app, then GLoader itself. Continue?"
-                : "Android will ask you to confirm removal of every tracked app. Continue?";
+        List<String> packages = getInstalledTrackedPackages();
+        StringBuilder message = new StringBuilder();
+        if (packages.isEmpty()) {
+            message.append("No tracked GLoader-installed applications are currently installed.");
+            if (uninstallSelfAfterward) {
+                message.append("\n\nAndroid will ask you to confirm removal of GLoader itself.");
+            }
+        } else {
+            message.append(uninstallSelfAfterward
+                    ? "Android will ask you to confirm removal of these tracked apps, then GLoader itself:\n\n"
+                    : "Android will ask you to confirm removal of these tracked apps:\n\n");
+            message.append(describePackages(packages));
+        }
         new AlertDialog.Builder(this)
                 .setTitle("Confirm cleanup")
-                .setMessage(message)
+                .setMessage(message.toString())
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Continue", (dialog, which) -> startTrackedCleanup(uninstallSelfAfterward))
                 .show();
@@ -396,15 +471,7 @@ public final class MainActivity extends Activity {
 
     private void startTrackedCleanup(boolean uninstallSelfAfterward) {
         cleanupQueue.clear();
-        for (String packageName : getTrackedPackages()) {
-            if (getPackageName().equals(packageName)) {
-                forgetPackage(packageName);
-            } else if (isPackageInstalled(packageName)) {
-                cleanupQueue.add(packageName);
-            } else {
-                forgetPackage(packageName);
-            }
-        }
+        cleanupQueue.addAll(getInstalledTrackedPackages());
         cleanupSequenceActive = true;
         uninstallSelfAfterCleanup = uninstallSelfAfterward;
         uninstallNextTrackedPackage();
@@ -455,6 +522,37 @@ public final class MainActivity extends Activity {
         } catch (PackageManager.NameNotFoundException ignored) {
             return false;
         }
+    }
+
+    private List<String> getInstalledTrackedPackages() {
+        List<String> packages = new ArrayList<>();
+        for (String packageName : getTrackedPackages()) {
+            if (getPackageName().equals(packageName)) {
+                forgetPackage(packageName);
+            } else if (isPackageInstalled(packageName)) {
+                packages.add(packageName);
+            } else {
+                forgetPackage(packageName);
+            }
+        }
+        packages.sort(String.CASE_INSENSITIVE_ORDER);
+        return packages;
+    }
+
+    private String describePackages(List<String> packages) {
+        PackageManager pm = getPackageManager();
+        StringBuilder description = new StringBuilder();
+        for (String packageName : packages) {
+            description.append("• ");
+            try {
+                ApplicationInfo app = pm.getApplicationInfo(packageName, 0);
+                description.append(app.loadLabel(pm)).append(" (").append(packageName).append(")");
+            } catch (PackageManager.NameNotFoundException ignored) {
+                description.append(packageName);
+            }
+            description.append('\n');
+        }
+        return description.toString().trim();
     }
 
     private Set<String> getTrackedPackages() {
