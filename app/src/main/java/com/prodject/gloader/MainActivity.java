@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageInstaller;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -36,8 +37,11 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collections;
@@ -49,10 +53,15 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 public final class MainActivity extends Activity {
     private static final int PICK_APK = 10;
     private static final int UNINSTALL_PACKAGE = 11;
     private static final String INSTALL_ACTION = "com.prodject.gloader.INSTALL_STATUS";
+    private static final String LATEST_RELEASE_API =
+            "https://api.github.com/repos/prodject/GLoader/releases/latest";
     private static final String PREFS = "gloader_packages";
     private static final String TRACKED_PACKAGES = "installed_packages";
     private static final int COLOR_BACKGROUND = Color.rgb(245, 246, 248);
@@ -75,6 +84,18 @@ public final class MainActivity extends Activity {
     private boolean appsFilterTrackedOnly;
     private int appsRenderGeneration;
     private int currentScreen;
+
+    private static final class ReleaseInfo {
+        final String version;
+        final String apkName;
+        final String apkUrl;
+
+        ReleaseInfo(String version, String apkName, String apkUrl) {
+            this.version = version;
+            this.apkName = apkName;
+            this.apkUrl = apkUrl;
+        }
+    }
 
     private static final class AppEntry {
         final String label;
@@ -168,6 +189,7 @@ public final class MainActivity extends Activity {
         screen.setOrientation(LinearLayout.VERTICAL);
         screen.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(screen, constrainedWidth(side, 0, 0));
+        addUpdatePanel(root, side);
         setContentView(scroll);
         showInstallerScreen();
     }
@@ -198,6 +220,32 @@ public final class MainActivity extends Activity {
 
         addResultArea();
         scanUsb();
+    }
+
+    private void addUpdatePanel(LinearLayout parent, int sidePaddingDp) {
+        LinearLayout updatePanel = new LinearLayout(this);
+        updatePanel.setOrientation(getResources().getConfiguration().screenWidthDp >= 600
+                ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        updatePanel.setGravity(Gravity.CENTER_VERTICAL);
+        updatePanel.setPadding(dp(16), dp(12), dp(16), dp(12));
+        updatePanel.setBackground(cardBackground());
+        updatePanel.setElevation(dp(2));
+
+        TextView version = text("Current version: " + currentVersionName(), 14, false);
+        version.setTextColor(COLOR_SECONDARY_TEXT);
+        boolean wide = getResources().getConfiguration().screenWidthDp >= 600;
+        LinearLayout.LayoutParams versionParams = wide
+                ? new LinearLayout.LayoutParams(0, -2, 1)
+                : new LinearLayout.LayoutParams(-1, -2);
+        updatePanel.addView(version, versionParams);
+
+        Button update = button("Update", false);
+        update.setOnClickListener(v -> checkForUpdate());
+        LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(wide ? -2 : -1, dp(48));
+        updateParams.setMargins(wide ? dp(10) : 0, wide ? 0 : dp(10), 0, 0);
+        updatePanel.addView(update, updateParams);
+
+        parent.addView(updatePanel, constrainedWidth(sidePaddingDp, 18, 0));
     }
 
     private void prepareScreen(String description) {
@@ -618,6 +666,103 @@ public final class MainActivity extends Activity {
         startActivityForResult(intent, PICK_APK);
     }
 
+    private void checkForUpdate() {
+        if (!ensureInstallPermission()) return;
+        toast("Checking for updates...");
+        worker.execute(() -> {
+            try {
+                ReleaseInfo latest = fetchLatestRelease();
+                if (latest == null) {
+                    toast("No release APK found on GitHub");
+                } else if (!isNewerVersion(latest.version, currentVersionName())) {
+                    toast("GLoader is up to date");
+                } else {
+                    runOnUiThread(() -> confirmUpdate(latest));
+                }
+            } catch (Exception e) {
+                toast("Update check failed: " + e.getMessage());
+            }
+        });
+    }
+
+    private void confirmUpdate(ReleaseInfo latest) {
+        new AlertDialog.Builder(this)
+                .setTitle("Update GLoader")
+                .setMessage("Version " + latest.version + " is available. Download and install "
+                        + latest.apkName + "?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Update", (dialog, which) -> downloadAndInstallUpdate(latest))
+                .show();
+    }
+
+    private void downloadAndInstallUpdate(ReleaseInfo latest) {
+        toast("Downloading GLoader " + latest.version + "...");
+        worker.execute(() -> {
+            try {
+                File apk = downloadReleaseApk(latest);
+                install(new FileInputStream(apk), apk.getName(), apk.length());
+            } catch (Exception e) {
+                toast("Update failed: " + e.getMessage());
+            }
+        });
+    }
+
+    private ReleaseInfo fetchLatestRelease() throws Exception {
+        JSONObject release = new JSONObject(readUrl(LATEST_RELEASE_API));
+        String version = normalizeVersion(release.optString("tag_name",
+                release.optString("name", "")));
+        JSONArray assets = release.getJSONArray("assets");
+        for (int i = 0; i < assets.length(); i++) {
+            JSONObject asset = assets.getJSONObject(i);
+            String name = asset.optString("name", "");
+            String url = asset.optString("browser_download_url", "");
+            if (name.toLowerCase(Locale.ROOT).endsWith(".apk") && !url.isEmpty()) {
+                return new ReleaseInfo(version, name, url);
+            }
+        }
+        return null;
+    }
+
+    private String readUrl(String value) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(value).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(12000);
+        connection.setRequestProperty("Accept", "application/vnd.github+json");
+        connection.setRequestProperty("User-Agent", "GLoader/" + currentVersionName());
+        try (InputStream input = connection.getInputStream()) {
+            return readString(input);
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private File downloadReleaseApk(ReleaseInfo latest) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(latest.apkUrl).openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(30000);
+        connection.setRequestProperty("User-Agent", "GLoader/" + currentVersionName());
+        File apk = new File(getCacheDir(), "gloader-update.apk");
+        try (InputStream input = connection.getInputStream();
+             OutputStream output = new FileOutputStream(apk)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+        } finally {
+            connection.disconnect();
+        }
+        return apk;
+    }
+
+    private String readString(InputStream input) throws Exception {
+        byte[] buffer = new byte[8192];
+        StringBuilder builder = new StringBuilder();
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            builder.append(new String(buffer, 0, count, "UTF-8"));
+        }
+        return builder.toString();
+    }
+
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (request == PICK_APK && result == RESULT_OK && data != null && data.getData() != null) {
@@ -807,6 +952,57 @@ public final class MainActivity extends Activity {
     private String readableSize(long bytes) {
         if (bytes < 1024 * 1024) return Math.max(1, bytes / 1024) + " KB";
         return String.format(Locale.US, "%.1f MB", bytes / 1048576f);
+    }
+
+    private String currentVersionName() {
+        try {
+            PackageInfo info;
+            if (Build.VERSION.SDK_INT >= 33) {
+                info = getPackageManager().getPackageInfo(getPackageName(),
+                        PackageManager.PackageInfoFlags.of(0));
+            } else {
+                info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            }
+            return info.versionName == null ? "unknown" : info.versionName;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return "unknown";
+        }
+    }
+
+    private String normalizeVersion(String value) {
+        String version = value == null ? "" : value.trim();
+        if (version.startsWith("v") || version.startsWith("V")) version = version.substring(1);
+        return version;
+    }
+
+    private boolean isNewerVersion(String candidate, String current) {
+        int[] candidateParts = versionParts(candidate);
+        int[] currentParts = versionParts(current);
+        int count = Math.max(candidateParts.length, currentParts.length);
+        for (int i = 0; i < count; i++) {
+            int left = i < candidateParts.length ? candidateParts[i] : 0;
+            int right = i < currentParts.length ? currentParts[i] : 0;
+            if (left != right) return left > right;
+        }
+        return false;
+    }
+
+    private int[] versionParts(String version) {
+        String normalized = normalizeVersion(version);
+        String[] pieces = normalized.split("\\.");
+        int[] values = new int[pieces.length];
+        for (int i = 0; i < pieces.length; i++) {
+            String digits = pieces[i].replaceAll("[^0-9].*$", "");
+            if (digits.isEmpty()) values[i] = 0;
+            else {
+                try {
+                    values[i] = Integer.parseInt(digits);
+                } catch (NumberFormatException ignored) {
+                    values[i] = 0;
+                }
+            }
+        }
+        return values;
     }
 
     private void toast(String value) {

@@ -44,6 +44,8 @@ If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the already installed `
 
 Android does not permit a regular user application to install APK files silently. Unless GLoader is installed as a system application or configured as a Device Owner, Android's standard installation confirmation remains mandatory.
 
+The footer shows the currently installed GLoader version. **Update** checks the latest GitHub release, downloads the release APK when a newer version exists, and starts Android's normal package update confirmation.
+
 The **Apps** tab shows installed packages visible to GLoader. User applications can be opened for Android's normal uninstall confirmation flow; protected system packages are shown as non-removable.
 
 The **Cleanup** tab tracks packages that were successfully installed through GLoader. It can request removal of those tracked applications one by one, then optionally request removal of GLoader itself. Android asks for confirmation for every uninstall action. When GLoader is uninstalled, Android also removes GLoader's private app data.
