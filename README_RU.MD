@@ -1,7 +1,7 @@
 # GLoader
 
 <p align="center">
-  <img src="assets/gloader-logo-master.png" alt="Логотип GLoader" width="240">
+  <img src="assets/gloader-logo-transparent.png" alt="Логотип GLoader" width="240">
 </p>
 
 [English](README.md) · **Русский**
