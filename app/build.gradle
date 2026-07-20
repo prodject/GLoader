@@ -1,0 +1,28 @@
+plugins {
+    id "com.android.application"
+}
+
+def buildNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "0"
+
+android {
+    namespace "com.prodject.gloader"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.prodject.gloader"
+        minSdk 30
+        targetSdk 35
+        versionCode 10000 + buildNumber.toInteger()
+        versionName "1.${buildNumber}"
+    }
+
+    buildTypes {
+        release {
+            // A known debug key makes CI artifacts directly installable. Do not use for Play Store.
+            signingConfig signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+}
