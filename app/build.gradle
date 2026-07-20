@@ -16,10 +16,21 @@ android {
         versionName "1.${buildNumber}"
     }
 
+    signingConfigs {
+        gloaderReleaseDebug {
+            storeFile file("keystore/gloader-release-debug.p12")
+            storeType "pkcs12"
+            storePassword "gloader-debug"
+            keyAlias "gloader"
+            keyPassword "gloader-debug"
+        }
+    }
+
     buildTypes {
         release {
-            // A known debug key makes CI artifacts directly installable. Do not use for Play Store.
-            signingConfig signingConfigs.debug
+            // Checked-in debug release key keeps GitHub Actions APKs update-compatible.
+            // Do not use this key for Play Store or any private production distribution.
+            signingConfig signingConfigs.gloaderReleaseDebug
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
