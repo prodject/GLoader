@@ -48,9 +48,9 @@ The footer shows the currently installed GLoader version. **Update** checks the 
 
 The **Apps** tab shows installed packages visible to GLoader. User applications can be opened for Android's normal uninstall confirmation flow; protected system packages are shown as non-removable.
 
-The **Cleanup** tab tracks packages that were successfully installed through GLoader. It can request removal of those tracked applications one by one, then optionally request removal of GLoader itself. Android asks for confirmation for every uninstall action. When GLoader is uninstalled, Android also removes GLoader's private app data.
+The **Cleanup** tab tracks packages that were successfully installed through GLoader. It can request removal of those tracked applications one by one, save visible logcat output to a connected external USB drive, then optionally request removal of GLoader itself. Android asks for confirmation for every uninstall action. When GLoader is uninstalled, Android also removes GLoader's private app data.
 
-Important limitation: a regular Android application cannot erase system Package Manager records, installation history, or system logs. Cleanup only covers tracked applications, GLoader's own uninstall request, and GLoader's private app data that Android deletes during uninstall.
+Important limitation: a regular Android application cannot erase system Package Manager records, installation history, or system logs. It also cannot read every firmware/vendor log without elevated privileges. Cleanup only covers tracked applications, GLoader's own uninstall request, GLoader's private app data that Android deletes during uninstall, and logcat entries Android exposes to GLoader.
 
 ## Builds and releases
 

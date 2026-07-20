@@ -42,10 +42,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -587,7 +589,7 @@ public final class MainActivity extends Activity {
         TextView privacy = text(
                 "• Apps installed through GLoader that you confirm\n"
                         + "• GLoader and all of its private app data\n\n"
-                        + "System Package Manager records and system logs are owned by Android and cannot be erased by a regular app.",
+                        + "System Package Manager records and system logs are owned by Android and cannot be erased by a regular app. Log export writes only the logcat data Android exposes to GLoader.",
                 14, false);
         privacy.setTextColor(COLOR_SECONDARY_TEXT);
         privacy.setLineSpacing(0, 1.15f);
@@ -597,6 +599,10 @@ public final class MainActivity extends Activity {
         trackedButton.setEnabled(!tracked.isEmpty());
         trackedButton.setOnClickListener(v -> confirmTrackedCleanup(false));
         screen.addView(trackedButton, matchWrap(5, 5));
+
+        Button logsButton = button("Save logs to USB", false);
+        logsButton.setOnClickListener(v -> saveLogsToExternalStorage());
+        screen.addView(logsButton, matchWrap(5, 5));
 
         Button fullCleanup = dangerButton("Clean up and uninstall GLoader");
         fullCleanup.setOnClickListener(v -> confirmTrackedCleanup(true));
@@ -635,6 +641,66 @@ public final class MainActivity extends Activity {
         cleanupSequenceActive = true;
         uninstallSelfAfterCleanup = uninstallSelfAfterward;
         uninstallNextTrackedPackage();
+    }
+
+    private void saveLogsToExternalStorage() {
+        toast("Saving logs to external storage...");
+        worker.execute(() -> {
+            try {
+                File root = findWritableRemovableRoot();
+                if (root == null) {
+                    toast("No writable external USB storage found");
+                    return;
+                }
+                File directory = ensureLogDirectory(root);
+                File output = new File(directory, "GLoader-logcat-"
+                        + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date())
+                        + ".txt");
+                dumpLogcat(output);
+                toast("Logs saved: " + output.getAbsolutePath());
+            } catch (Exception e) {
+                toast("Could not save logs: " + e.getMessage());
+            }
+        });
+    }
+
+    private File findWritableRemovableRoot() {
+        StorageManager manager = getSystemService(StorageManager.class);
+        for (StorageVolume volume : manager.getStorageVolumes()) {
+            File root = volume.getDirectory();
+            if (volume.isRemovable() && root != null && root.canRead() && root.canWrite()) {
+                return root;
+            }
+        }
+        return null;
+    }
+
+    private File ensureLogDirectory(File removableRoot) throws Exception {
+        File directory = new File(removableRoot, "GLoader-logs");
+        if ((directory.exists() || directory.mkdirs()) && directory.canWrite()) return directory;
+        File appDirectory = new File(removableRoot,
+                "Android/data/" + getPackageName() + "/files/GLoader-logs");
+        if ((appDirectory.exists() || appDirectory.mkdirs()) && appDirectory.canWrite()) {
+            return appDirectory;
+        }
+        throw new Exception("Could not create log folder on USB storage");
+    }
+
+    private void dumpLogcat(File output) throws Exception {
+        Process process = new ProcessBuilder("logcat", "-d", "-v", "threadtime")
+                .redirectErrorStream(true)
+                .start();
+        try (InputStream input = process.getInputStream();
+             OutputStream file = new FileOutputStream(output)) {
+            file.write(("GLoader log export\n"
+                    + "Generated: " + new Date() + "\n"
+                    + "Note: Android may restrict logcat to entries visible to this app.\n\n")
+                    .getBytes("UTF-8"));
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) file.write(buffer, 0, count);
+        }
+        process.waitFor();
     }
 
     private void uninstallNextTrackedPackage() {
