@@ -198,11 +198,11 @@ public final class MainActivity extends Activity {
         cleanupTab.setOnClickListener(v -> showCleanupScreen());
         navigation.addView(cleanupTab, menuParams());
 
+        addUpdatePanel(root, side);
         screen = new LinearLayout(this);
         screen.setOrientation(LinearLayout.VERTICAL);
         screen.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(screen, constrainedWidth(side, 0, 0));
-        addUpdatePanel(root, side);
         setContentView(scroll);
         showInstallerScreen();
     }
@@ -258,7 +258,7 @@ public final class MainActivity extends Activity {
         updateParams.setMargins(wide ? dp(10) : 0, wide ? 0 : dp(10), 0, 0);
         updatePanel.addView(update, updateParams);
 
-        parent.addView(updatePanel, constrainedWidth(sidePaddingDp, 18, 0));
+        parent.addView(updatePanel, constrainedWidth(sidePaddingDp, 0, 18));
     }
 
     private void prepareScreen(String description) {
