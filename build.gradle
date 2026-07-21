@@ -39,11 +39,15 @@ tasks.register("buildInstallHelper", Exec) {
         delete(helperDexDir)
         delete(helperJar)
         mkdir(helperDexDir)
+        def helperClassFiles = fileTree(helperClassesDir) {
+            include "**/*.class"
+        }.files.collect { it.absolutePath }
+        commandLine([
+                d8Executable,
+                "--min-api", "30",
+                "--output", helperDexDir.get().asFile.absolutePath
+        ] + helperClassFiles)
     }
-    commandLine d8Executable,
-            "--min-api", "30",
-            "--output", helperDexDir.get().asFile.absolutePath,
-            helperClassesDir.get().asFile.absolutePath
     doLast {
         ant.zip(destfile: helperJar.get().asFile.absolutePath,
                 basedir: helperDexDir.get().asFile.absolutePath)
