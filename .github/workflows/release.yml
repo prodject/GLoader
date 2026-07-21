@@ -35,6 +35,7 @@ jobs:
 
       - name: Bundle installer assets
         run: |
+          mkdir -p installer-phone/src/main/assets
           cp app/build/outputs/apk/release/app-release.apk installer-phone/src/main/assets/GLoader-${VERSION}.apk
           cp build/installer-helper/gloader-install-helper.jar installer-phone/src/main/assets/gloader-install-helper-${VERSION}.jar
 
