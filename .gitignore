@@ -8,5 +8,7 @@ local.properties
 captures/
 .DS_Store
 .scripts/
+.dump/
+.dump/dump-*/
 dump/dump-*/
 dump/

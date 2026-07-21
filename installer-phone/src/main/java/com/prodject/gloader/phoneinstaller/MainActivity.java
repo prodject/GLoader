@@ -2,6 +2,11 @@ package com.prodject.gloader.phoneinstaller;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbManager;
 import android.net.Uri;
@@ -24,6 +29,14 @@ import java.util.Map;
 public final class MainActivity extends Activity {
     private static final int REQUEST_LOGS_TREE = 100;
     private static final int REQUEST_EXPORT_LOG = 101;
+    private static final int COLOR_BACKGROUND = Color.rgb(245, 246, 248);
+    private static final int COLOR_SURFACE = Color.WHITE;
+    private static final int COLOR_PRIMARY = Color.rgb(20, 22, 26);
+    private static final int COLOR_SECONDARY_TEXT = Color.rgb(92, 99, 112);
+    private static final int COLOR_OUTLINE = Color.rgb(218, 222, 229);
+    private static final int COLOR_ACCENT = Color.rgb(11, 87, 208);
+    private static final int COLOR_ACCENT_DARK = Color.rgb(8, 66, 160);
+    private static final int COLOR_CONSOLE = Color.rgb(28, 31, 36);
 
     private TextView status;
     private TextView codeView;
@@ -41,67 +54,169 @@ public final class MainActivity extends Activity {
 
     private View buildLayout() {
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(COLOR_BACKGROUND);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(18));
-        scroll.addView(root);
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        int side = getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 48 : 20;
+        root.setPadding(dp(side), dp(28), dp(side), dp(36));
+        scroll.addView(root, new ScrollView.LayoutParams(-1, -2));
 
-        TextView title = text("GLoader Installer", 24, true);
-        root.addView(title);
+        TextView badge = label("ADB companion");
+        root.addView(badge, matchWrap(0, 10));
 
-        status = text("", 14, false);
-        status.setPadding(0, dp(10), 0, dp(12));
-        root.addView(status);
+        TextView title = text("GLoader Installer", 34, true, COLOR_PRIMARY);
+        title.setGravity(Gravity.CENTER);
+        root.addView(title, matchWrap(0, 4));
 
-        Button qrButton = button("Получить код авторизации");
+        TextView subtitle = text("QR authorization and direct APK installation for the head unit.",
+                15, false, COLOR_SECONDARY_TEXT);
+        subtitle.setGravity(Gravity.CENTER);
+        root.addView(subtitle, constrainedWidth(side, 0, 20));
+
+        LinearLayout statusPanel = card();
+        TextView statusTitle = text("Connection", 16, true, COLOR_PRIMARY);
+        statusPanel.addView(statusTitle, matchWrap(0, 8));
+        status = text("", 14, false, COLOR_SECONDARY_TEXT);
+        status.setLineSpacing(dp(2), 1f);
+        statusPanel.addView(status, matchWrap(0, 0));
+        root.addView(statusPanel, constrainedWidth(side, 0, 14));
+
+        LinearLayout actionPanel = card();
+        TextView actionTitle = text("Authorization", 16, true, COLOR_PRIMARY);
+        actionPanel.addView(actionTitle, matchWrap(0, 8));
+
+        codeView = text("Код появится здесь", 28, true, COLOR_PRIMARY);
+        codeView.setGravity(Gravity.CENTER);
+        codeView.setLetterSpacing(0.08f);
+        codeView.setBackground(pillBackground(Color.rgb(239, 243, 248), COLOR_OUTLINE, 12));
+        codeView.setPadding(dp(12), dp(14), dp(12), dp(14));
+        actionPanel.addView(codeView, matchWrap(0, 12));
+
+        Button qrButton = button("Получить код авторизации", true);
         qrButton.setOnClickListener(v -> pickLogsTree());
-        root.addView(qrButton);
+        actionPanel.addView(qrButton, buttonParams(0, 6));
 
-        codeView = text("Код появится здесь после выбора флешки.", 20, true);
-        codeView.setGravity(Gravity.CENTER_HORIZONTAL);
-        codeView.setPadding(0, dp(14), 0, dp(18));
-        root.addView(codeView);
-
-        Button installButton = button("Пропатчить установщик");
+        Button installButton = button("Пропатчить установщик", true);
         installButton.setOnClickListener(v -> startInstallAttempt());
-        root.addView(installButton);
+        actionPanel.addView(installButton, buttonParams(6, 6));
 
-        Button usbButton = button("Обновить USB/ADB статус");
+        LinearLayout secondaryRow = new LinearLayout(this);
+        secondaryRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button usbButton = button("Обновить", false);
         usbButton.setOnClickListener(v -> refreshUsbStatus());
-        root.addView(usbButton);
-
-        Button exportButton = button("Сохранить лог");
+        secondaryRow.addView(usbButton, rowButtonParams(0, 4));
+        Button exportButton = button("Сохранить лог", false);
         exportButton.setOnClickListener(v -> exportLog());
-        root.addView(exportButton);
+        secondaryRow.addView(exportButton, rowButtonParams(4, 0));
+        actionPanel.addView(secondaryRow, matchWrap(4, 0));
+        root.addView(actionPanel, constrainedWidth(side, 0, 14));
 
-        logView = text("", 13, false);
+        LinearLayout logPanel = card();
+        TextView logTitle = text("Log", 16, true, COLOR_PRIMARY);
+        logPanel.addView(logTitle, matchWrap(0, 8));
+        logView = text("", 12, false, Color.rgb(232, 238, 246));
+        logView.setTypeface(Typeface.MONOSPACE);
         logView.setMovementMethod(new ScrollingMovementMethod());
-        logView.setPadding(0, dp(16), 0, 0);
-        root.addView(logView);
+        logView.setMinLines(12);
+        logView.setPadding(dp(12), dp(12), dp(12), dp(12));
+        logView.setBackground(pillBackground(COLOR_CONSOLE, Color.rgb(55, 61, 70), 8));
+        logPanel.addView(logView, matchWrap(0, 0));
+        root.addView(logPanel, constrainedWidth(side, 0, 0));
 
         return scroll;
     }
 
-    private TextView text(String value, int sp, boolean strong) {
+    private TextView text(String value, int sp, boolean strong, int color) {
         TextView view = new TextView(this);
         view.setText(value);
         view.setTextSize(sp);
-        view.setTextColor(0xff202124);
+        view.setTextColor(color);
+        view.setIncludeFontPadding(true);
         if (strong) {
-            view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            view.setTypeface(Typeface.DEFAULT_BOLD);
         }
         return view;
     }
 
-    private Button button(String value) {
+    private TextView label(String value) {
+        TextView view = text(value, 12, true, COLOR_SECONDARY_TEXT);
+        view.setGravity(Gravity.CENTER);
+        view.setAllCaps(false);
+        view.setPadding(dp(10), dp(5), dp(10), dp(5));
+        view.setBackground(pillBackground(Color.WHITE, COLOR_OUTLINE, 999));
+        return view;
+    }
+
+    private Button button(String value, boolean primary) {
         Button button = new Button(this);
         button.setText(value);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(6), 0, dp(6));
-        button.setLayoutParams(params);
+        button.setAllCaps(false);
+        button.setTextSize(14);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setMinHeight(dp(48));
+        button.setMinimumHeight(dp(48));
+        button.setPadding(dp(12), 0, dp(12), 0);
+        int fill = primary ? COLOR_PRIMARY : COLOR_SURFACE;
+        int stroke = primary ? COLOR_PRIMARY : COLOR_OUTLINE;
+        int textColor = primary ? Color.WHITE : COLOR_PRIMARY;
+        button.setTextColor(textColor);
+        button.setBackground(ripple(fill, stroke, primary ? COLOR_ACCENT_DARK : Color.rgb(238, 241, 245), 8));
         return button;
+    }
+
+    private LinearLayout card() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setBackground(pillBackground(COLOR_SURFACE, COLOR_OUTLINE, 8));
+        card.setElevation(dp(1));
+        return card;
+    }
+
+    private GradientDrawable pillBackground(int color, int stroke, int radius) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(radius));
+        drawable.setStroke(dp(1), stroke);
+        return drawable;
+    }
+
+    private RippleDrawable ripple(int color, int stroke, int ripple, int radius) {
+        return new RippleDrawable(
+                ColorStateList.valueOf(ripple),
+                pillBackground(color, stroke, radius),
+                null);
+    }
+
+    private LinearLayout.LayoutParams matchWrap(int top, int bottom) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, dp(top), 0, dp(bottom));
+        return params;
+    }
+
+    private LinearLayout.LayoutParams constrainedWidth(int sidePaddingDp, int top, int bottom) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, dp(top), 0, dp(bottom));
+        int screenDp = getResources().getConfiguration().screenWidthDp;
+        if (screenDp > 0) {
+            params.width = dp(Math.min(720, screenDp - sidePaddingDp * 2));
+        }
+        return params;
+    }
+
+    private LinearLayout.LayoutParams buttonParams(int top, int bottom) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(50));
+        params.setMargins(0, dp(top), 0, dp(bottom));
+        return params;
+    }
+
+    private LinearLayout.LayoutParams rowButtonParams(int left, int right) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        params.setMargins(dp(left), 0, dp(right), 0);
+        return params;
     }
 
     private void pickLogsTree() {
