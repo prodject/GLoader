@@ -4,6 +4,7 @@ set -eu
 PACKAGE="com.prodject.gloader"
 REMOTE_APK="/data/local/tmp/GLoader.apk"
 REMOTE_HELPER="/data/local/tmp/gloader-install-helper.jar"
+HELPER_CLASS="com.prodject.gloader.installer.InstallHelper"
 REINSTALL_ON_SIGNATURE_MISMATCH=0
 APK="${1:-}"
 HELPER="${GLOADER_INSTALL_HELPER:-}"
@@ -40,7 +41,7 @@ if [ -n "$HELPER" ] && [ -f "$HELPER" ]; then
 
     echo "Installing GLoader through PackageInstaller helper..."
     set +e
-    INSTALL_OUTPUT=$(adb shell CLASSPATH="$REMOTE_HELPER" app_process /system/bin com.prodject.gloader.installer.InstallHelper "$REMOTE_APK" "$PACKAGE" 2>&1)
+    INSTALL_OUTPUT=$(adb shell sh -c "'CLASSPATH=$REMOTE_HELPER exec app_process /system/bin $HELPER_CLASS $REMOTE_APK $PACKAGE'" 2>&1)
     INSTALL_STATUS=$?
     set -e
 else
@@ -61,7 +62,7 @@ if [ "$INSTALL_STATUS" -ne 0 ]; then
             adb shell pm clear --user 0 "$PACKAGE" >/dev/null 2>&1 || true
             adb shell pm uninstall --user 0 "$PACKAGE" >/dev/null 2>&1 || adb shell pm uninstall "$PACKAGE" >/dev/null 2>&1 || true
             if [ -n "$HELPER" ] && [ -f "$HELPER" ]; then
-                adb shell CLASSPATH="$REMOTE_HELPER" app_process /system/bin com.prodject.gloader.installer.InstallHelper "$REMOTE_APK" "$PACKAGE"
+                adb shell sh -c "'CLASSPATH=$REMOTE_HELPER exec app_process /system/bin $HELPER_CLASS $REMOTE_APK $PACKAGE'"
             else
                 adb shell pm install --user 0 -r -d -g "$REMOTE_APK"
             fi

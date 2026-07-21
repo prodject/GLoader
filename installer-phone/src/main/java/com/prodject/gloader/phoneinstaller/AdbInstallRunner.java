@@ -46,9 +46,9 @@ final class AdbInstallRunner {
             logger.log("Pushing helper...");
             client.push(helper, REMOTE_HELPER, 0644);
             logger.log("Running PackageInstaller helper...");
-            String helperOutput = client.shell("CLASSPATH=" + REMOTE_HELPER
-                    + " app_process /system/bin com.prodject.gloader.installer.InstallHelper "
-                    + REMOTE_APK + " " + PACKAGE);
+            String helperOutput = client.shell("sh -c 'CLASSPATH=" + REMOTE_HELPER
+                    + " exec app_process /system/bin com.prodject.gloader.installer.InstallHelper "
+                    + REMOTE_APK + " " + PACKAGE + "'");
             logger.log(helperOutput.trim());
             logger.log("Checking package registration...");
             String path = client.shell("pm path " + PACKAGE);
