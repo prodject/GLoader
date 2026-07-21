@@ -1,0 +1,46 @@
+plugins {
+    id "com.android.application"
+}
+
+def buildNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "0"
+
+android {
+    namespace "com.prodject.gloader.phoneinstaller"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.prodject.gloader.phoneinstaller"
+        minSdk 30
+        targetSdk 35
+        versionCode 10000 + buildNumber.toInteger()
+        versionName "1.${buildNumber}"
+    }
+
+    signingConfigs {
+        gloaderReleaseDebug {
+            storeFile file("../app/keystore/gloader-release-debug.p12")
+            storeType "pkcs12"
+            storePassword "gloader-debug"
+            keyAlias "gloader"
+            keyPassword "gloader-debug"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.gloaderReleaseDebug
+            minifyEnabled true
+            shrinkResources false
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "androidx.documentfile:documentfile:1.0.1"
+}

@@ -54,7 +54,7 @@ Important limitation: a regular Android application cannot erase system Package 
 
 ## Builds and releases
 
-GitHub Actions builds a minimized release APK and `gloader-install-helper` whenever the workflow runs on the `main` branch and publishes a `1.X` release, where `X` is the automatically incremented Actions run number. The APK is signed with the repository debug release key for direct installation and update compatibility between Actions builds. Configure a private production signing key before distributing the application through an app store.
+GitHub Actions builds a minimized release APK, `gloader-install-helper`, and a phone-side `GLoader-installer` APK whenever the workflow runs on the `main` branch and publishes a `1.X` release, where `X` is the automatically incremented Actions run number. The phone installer can calculate the QR authorization code from a selected USB bugreport folder and bundles the GLoader APK/helper artifacts for the ADB installation flow. The APK is signed with the repository debug release key for direct installation and update compatibility between Actions builds. Configure a private production signing key before distributing the application through an app store.
 
 The project is intended to be built by the included GitHub Actions workflow. A local build, if required, needs JDK 17, Android SDK 35, and Gradle 8.9:
 
