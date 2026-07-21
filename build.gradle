@@ -1,3 +1,51 @@
 plugins {
     id "com.android.application" version "8.7.3" apply false
 }
+
+def helperSourceDir = file("installer-helper/src/main/java")
+def helperClassesDir = layout.buildDirectory.dir("installer-helper/classes")
+def helperDexDir = layout.buildDirectory.dir("installer-helper/dex")
+def helperJar = layout.buildDirectory.file("installer-helper/gloader-install-helper.jar")
+
+def androidSdkPath = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+if (androidSdkPath == null) {
+    def localProperties = file("local.properties")
+    if (localProperties.isFile()) {
+        def properties = new Properties()
+        localProperties.withInputStream { properties.load(it) }
+        androidSdkPath = properties.getProperty("sdk.dir")
+    }
+}
+
+tasks.register("compileInstallHelper", JavaCompile) {
+    source = fileTree(helperSourceDir) {
+        include "**/*.java"
+    }
+    destinationDirectory = helperClassesDir
+    classpath = files("${androidSdkPath}/platforms/android-35/android.jar")
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    options.compilerArgs += ["-Xlint:deprecation"]
+}
+
+tasks.register("buildInstallHelper", Exec) {
+    dependsOn "compileInstallHelper"
+    def d8Executable = System.getProperty("os.name").toLowerCase().contains("windows")
+            ? "${androidSdkPath}/build-tools/35.0.0/d8.bat"
+            : "${androidSdkPath}/build-tools/35.0.0/d8"
+    inputs.dir(helperClassesDir)
+    outputs.file(helperJar)
+    doFirst {
+        delete(helperDexDir)
+        delete(helperJar)
+        mkdir(helperDexDir)
+    }
+    commandLine d8Executable,
+            "--min-api", "30",
+            "--output", helperDexDir.get().asFile.absolutePath,
+            helperClassesDir.get().asFile.absolutePath
+    doLast {
+        ant.zip(destfile: helperJar.get().asFile.absolutePath,
+                basedir: helperDexDir.get().asFile.absolutePath)
+    }
+}

@@ -19,7 +19,7 @@ chmod +x install.sh
 ./install.sh ./GLoader-1.X.apk
 ```
 
-The script waits for the device, quickly copies the APK to `/data/local/tmp`, runs `pm install`, attempts to grant external-storage and package-installation access through `appops`, also attempts the legacy read-storage grant, removes the temporary file, and launches GLoader. Whether the `appops` and `pm grant` commands succeed depends on the permissions available to the ADB shell in the particular head-unit firmware.
+The script waits for the device, quickly copies the APK to `/data/local/tmp`, and installs it through the bundled `gloader-install-helper` when available. The helper runs through `app_process` as the ADB shell user and calls Android's `PackageInstaller` API directly, which can work on firmware where `pm install` is blocked by user-build restrictions. If the helper is not present, the script falls back to `pm install`. It then attempts to grant external-storage and package-installation access through `appops`, also attempts the legacy read-storage grant, removes temporary files, and launches GLoader. Whether the helper, `appops`, and `pm grant` commands succeed depends on the permissions available to the ADB shell in the particular head-unit firmware.
 
 GitHub Actions release APKs are signed with a checked-in debug release key at `app/keystore/gloader-release-debug.p12`, so future Actions builds are update-compatible with each other. Do not use this key for Play Store or private production distribution.
 
@@ -54,7 +54,7 @@ Important limitation: a regular Android application cannot erase system Package 
 
 ## Builds and releases
 
-GitHub Actions builds a minimized release APK whenever the workflow runs on the `main` branch and publishes a `1.X` release, where `X` is the automatically incremented Actions run number. The APK is signed with the repository debug release key for direct installation and update compatibility between Actions builds. Configure a private production signing key before distributing the application through an app store.
+GitHub Actions builds a minimized release APK and `gloader-install-helper` whenever the workflow runs on the `main` branch and publishes a `1.X` release, where `X` is the automatically incremented Actions run number. The APK is signed with the repository debug release key for direct installation and update compatibility between Actions builds. Configure a private production signing key before distributing the application through an app store.
 
 The project is intended to be built by the included GitHub Actions workflow. A local build, if required, needs JDK 17, Android SDK 35, and Gradle 8.9:
 

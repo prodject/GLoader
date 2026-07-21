@@ -7,3 +7,6 @@ local.properties
 *.keystore
 captures/
 .DS_Store
+.scripts/
+dump/dump-*/
+dump/
