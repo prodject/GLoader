@@ -172,20 +172,24 @@ public final class MainActivity extends Activity {
 
         Uri uri = data.getData();
         if (requestCode == REQUEST_LOGS_TREE) {
-            getContentResolver().takePersistableUriPermission(uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            DocumentFile root = DocumentFile.fromTreeUri(this, uri);
-            if (root == null) {
-                appendLog("Cannot open selected folder");
-                return;
-            }
             try {
+                try {
+                    getContentResolver().takePersistableUriPermission(uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (SecurityException e) {
+                    appendLog("Persistable permission was not granted by this picker: " + e.getMessage());
+                }
+                DocumentFile root = DocumentFile.fromTreeUri(this, uri);
+                if (root == null) {
+                    appendLog("Cannot open selected folder");
+                    return;
+                }
                 QrCodeExtractor.Result result = QrCodeExtractor.extract(this, root);
                 codeView.setText(result.authCode);
                 appendLog("Authorization code: " + result.authCode);
                 appendLog("SN: " + result.serialNumber);
                 appendLog("Source: " + result.sourceName);
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 codeView.setText("Код не найден");
                 appendLog("QR code extraction failed: " + e.getMessage());
             }

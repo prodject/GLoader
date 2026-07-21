@@ -55,7 +55,11 @@ final class QrCodeExtractor {
 
     private static DocumentFile latestLogsFolder(DocumentFile root) {
         DocumentFile best = null;
-        for (DocumentFile file : root.listFiles()) {
+        DocumentFile[] files = root.listFiles();
+        if (files == null) {
+            return null;
+        }
+        for (DocumentFile file : files) {
             String name = file.getName();
             if (file.isDirectory() && name != null && name.startsWith("logs_")) {
                 if (best == null || name.compareTo(best.getName()) > 0) {
@@ -68,7 +72,11 @@ final class QrCodeExtractor {
 
     private static DocumentFile latestBugreport(DocumentFile folder) {
         DocumentFile best = null;
-        for (DocumentFile file : folder.listFiles()) {
+        DocumentFile[] files = folder.listFiles();
+        if (files == null) {
+            return null;
+        }
+        for (DocumentFile file : files) {
             String name = file.getName();
             if (file.isFile() && name != null && name.startsWith("bugreport-") && name.endsWith(".zip")) {
                 if (best == null || name.compareTo(best.getName()) > 0) {
