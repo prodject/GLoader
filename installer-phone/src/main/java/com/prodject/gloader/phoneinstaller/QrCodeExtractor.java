@@ -4,10 +4,11 @@ import android.content.Context;
 
 import androidx.documentfile.provider.DocumentFile;
 
-import java.io.ByteArrayInputStream;
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.nio.ByteBuffer;
+import java.io.InputStreamReader;
+import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -40,17 +41,14 @@ final class QrCodeExtractor {
             throw new IllegalStateException("bugreport-*.zip not found in " + logs.getName());
         }
 
-        byte[] zipBytes;
         try (InputStream input = context.getContentResolver().openInputStream(bugreport.getUri())) {
             if (input == null) {
                 throw new IllegalStateException("Cannot open " + bugreport.getName());
             }
-            zipBytes = readAll(input);
+            ParsedFields fields = parseZip(input);
+            String code = calculate(fields.salt, fields.password, fields.serialNumber);
+            return new Result(code, fields.serialNumber, logs.getName() + "/" + bugreport.getName());
         }
-
-        ParsedFields fields = parseZip(zipBytes);
-        String code = calculate(fields.salt, fields.password, fields.serialNumber);
-        return new Result(code, fields.serialNumber, logs.getName() + "/" + bugreport.getName());
     }
 
     private static DocumentFile latestLogsFolder(DocumentFile root) {
@@ -87,32 +85,62 @@ final class QrCodeExtractor {
         return best;
     }
 
-    private static ParsedFields parseZip(byte[] zipBytes) throws Exception {
-        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+    private static ParsedFields parseZip(InputStream zipInput) throws Exception {
+        try (ZipInputStream zip = new ZipInputStream(zipInput)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
                 String name = entry.getName();
                 if (entry.isDirectory() || name == null || !name.endsWith(".txt")) {
                     continue;
                 }
-                String content = decodeUtf8IgnoringErrors(readAll(zip));
-                String saltText = lastMatch(SALT_BRACKET, content);
-                String passwordText = lastMatch(PASSWORD_BRACKET, content);
-                if (saltText == null) {
-                    saltText = stripOptionalBrackets(lastMatch(SALT_LINE, content));
-                }
-                if (passwordText == null) {
-                    passwordText = stripOptionalBrackets(lastMatch(PASSWORD_LINE, content));
-                }
-                List<Integer> salt = parseIntList(saltText);
-                List<Integer> password = parseIntList(passwordText);
-                String serial = lastMatch(SN, content);
-                if (!salt.isEmpty() && !password.isEmpty() && serial != null) {
-                    return new ParsedFields(salt, password, serial);
+                ParsedFields fields = parseTxtEntry(zip);
+                if (fields != null) {
+                    return fields;
                 }
             }
         }
         throw new IllegalStateException("salt/password/sn fields not found");
+    }
+
+    private static ParsedFields parseTxtEntry(InputStream input) throws Exception {
+        String saltText = null;
+        String passwordText = null;
+        String serial = null;
+        CharsetDecoder decoder = StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.IGNORE)
+                .onUnmappableCharacter(CodingErrorAction.IGNORE);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(input, decoder), 64 * 1024);
+        String line;
+        while ((line = reader.readLine()) != null) {
+            String lineSalt = lastMatch(SALT_BRACKET, line);
+            String linePassword = lastMatch(PASSWORD_BRACKET, line);
+            if (lineSalt == null) {
+                lineSalt = stripOptionalBrackets(lastMatch(SALT_LINE, line));
+            }
+            if (linePassword == null) {
+                linePassword = stripOptionalBrackets(lastMatch(PASSWORD_LINE, line));
+            }
+            String lineSerial = lastMatch(SN, line);
+            if (lineSalt != null) {
+                saltText = lineSalt;
+            }
+            if (linePassword != null) {
+                passwordText = linePassword;
+            }
+            if (lineSerial != null) {
+                serial = lineSerial;
+            }
+        }
+        if (saltText == null || passwordText == null || serial == null) {
+            return null;
+        }
+        List<Integer> salt = parseIntList(saltText);
+        List<Integer> password = parseIntList(passwordText);
+        if (salt.isEmpty() || password.isEmpty()) {
+            return null;
+        }
+        return new ParsedFields(salt, password, serial);
     }
 
     private static String lastMatch(Pattern pattern, String content) {
@@ -190,25 +218,6 @@ final class QrCodeExtractor {
             bytes[i] = (byte) (values.get(i) & 0xff);
         }
         return bytes;
-    }
-
-    private static byte[] readAll(InputStream input) throws Exception {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[64 * 1024];
-        int count;
-        while ((count = input.read(buffer)) != -1) {
-            output.write(buffer, 0, count);
-        }
-        return output.toByteArray();
-    }
-
-    private static String decodeUtf8IgnoringErrors(byte[] bytes) throws Exception {
-        return StandardCharsets.UTF_8
-                .newDecoder()
-                .onMalformedInput(CodingErrorAction.IGNORE)
-                .onUnmappableCharacter(CodingErrorAction.IGNORE)
-                .decode(ByteBuffer.wrap(bytes))
-                .toString();
     }
 
     static final class Result {
