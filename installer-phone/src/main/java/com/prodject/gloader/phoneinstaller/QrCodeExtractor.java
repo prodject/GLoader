@@ -7,6 +7,8 @@ import androidx.documentfile.provider.DocumentFile;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +23,9 @@ import javax.crypto.spec.SecretKeySpec;
 final class QrCodeExtractor {
     private static final Pattern SALT_BRACKET = Pattern.compile("salt\\s*=\\s*\\[(.*?)]", Pattern.DOTALL);
     private static final Pattern PASSWORD_BRACKET = Pattern.compile("password\\s*=\\s*\\[(.*?)]", Pattern.DOTALL);
-    private static final Pattern SN = Pattern.compile("\\ssn\\s*=\\s*([A-Za-z0-9_.-]+)");
+    private static final Pattern SALT_LINE = Pattern.compile("salt\\s*=\\s*([^\\n]+)");
+    private static final Pattern PASSWORD_LINE = Pattern.compile("password\\s*=\\s*([^\\n]+)");
+    private static final Pattern SN = Pattern.compile(" sn\\s*=\\s*([A-Za-z0-9_.-]+)");
 
     private QrCodeExtractor() {
     }
@@ -83,9 +87,17 @@ final class QrCodeExtractor {
                 if (entry.isDirectory() || name == null || !name.endsWith(".txt")) {
                     continue;
                 }
-                String content = new String(readAll(zip), StandardCharsets.UTF_8);
-                List<Integer> salt = parseIntList(lastMatch(SALT_BRACKET, content));
-                List<Integer> password = parseIntList(lastMatch(PASSWORD_BRACKET, content));
+                String content = decodeUtf8IgnoringErrors(readAll(zip));
+                String saltText = lastMatch(SALT_BRACKET, content);
+                String passwordText = lastMatch(PASSWORD_BRACKET, content);
+                if (saltText == null) {
+                    saltText = stripOptionalBrackets(lastMatch(SALT_LINE, content));
+                }
+                if (passwordText == null) {
+                    passwordText = stripOptionalBrackets(lastMatch(PASSWORD_LINE, content));
+                }
+                List<Integer> salt = parseIntList(saltText);
+                List<Integer> password = parseIntList(passwordText);
                 String serial = lastMatch(SN, content);
                 if (!salt.isEmpty() && !password.isEmpty() && serial != null) {
                     return new ParsedFields(salt, password, serial);
@@ -102,6 +114,17 @@ final class QrCodeExtractor {
             value = matcher.group(1).trim();
         }
         return value;
+    }
+
+    private static String stripOptionalBrackets(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 
     private static List<Integer> parseIntList(String value) {
@@ -169,6 +192,15 @@ final class QrCodeExtractor {
             output.write(buffer, 0, count);
         }
         return output.toByteArray();
+    }
+
+    private static String decodeUtf8IgnoringErrors(byte[] bytes) throws Exception {
+        return StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.IGNORE)
+                .onUnmappableCharacter(CodingErrorAction.IGNORE)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString();
     }
 
     static final class Result {
