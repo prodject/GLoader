@@ -3,6 +3,8 @@ package com.prodject.gloader.phoneinstaller;
 import android.content.Context;
 import android.content.res.AssetManager;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 
 final class InstallerAssets {
@@ -44,5 +46,26 @@ final class InstallerAssets {
             }
             return total;
         }
+    }
+
+    File copyApkToCache(Context context) throws Exception {
+        return copyAssetToCache(context, apkName, "GLoader.apk");
+    }
+
+    File copyHelperToCache(Context context) throws Exception {
+        return copyAssetToCache(context, helperName, "gloader-install-helper.jar");
+    }
+
+    private static File copyAssetToCache(Context context, String assetName, String outputName) throws Exception {
+        File output = new File(context.getCacheDir(), outputName);
+        try (InputStream input = context.getAssets().open(assetName);
+             FileOutputStream fileOutput = new FileOutputStream(output)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                fileOutput.write(buffer, 0, count);
+            }
+        }
+        return output;
     }
 }

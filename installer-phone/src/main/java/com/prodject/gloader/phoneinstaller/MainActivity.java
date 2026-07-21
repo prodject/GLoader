@@ -125,10 +125,15 @@ public final class MainActivity extends Activity {
             InstallerAssets assets = InstallerAssets.from(this);
             appendLog("Bundled APK: " + assets.apkName + " (" + assets.apkBytes + " bytes)");
             appendLog("Bundled helper: " + assets.helperName + " (" + assets.helperBytes + " bytes)");
-            new AdbInstallRunner().install(assets);
+            new Thread(() -> {
+                try {
+                    new AdbInstallRunner().install(this, assets, this::appendLog);
+                } catch (Exception e) {
+                    appendLog("Install failed: " + e.getMessage());
+                }
+            }, "gloader-adb-install").start();
         } catch (Exception e) {
-            appendLog("Install is not available yet: " + e.getMessage());
-            appendLog("Подключите ГУ к телефону через USB OTG. Для реальной установки нужен встроенный ADB client; системной команды adb на Android-телефоне нет.");
+            appendLog("Install failed: " + e.getMessage());
         }
     }
 
@@ -142,6 +147,7 @@ public final class MainActivity extends Activity {
             text.append(device.getDeviceName())
                     .append(" vid=").append(device.getVendorId())
                     .append(" pid=").append(device.getProductId())
+                    .append(AdbInstallRunner.hasAdbInterface(device) ? " ADB" : "")
                     .append('\n');
         }
         status.setText(text.toString().trim());
@@ -199,11 +205,13 @@ public final class MainActivity extends Activity {
     }
 
     private void appendLog(String message) {
-        String stamp = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
-        log.append(stamp).append("  ").append(message).append('\n');
-        if (logView != null) {
-            logView.setText(log.toString());
-        }
+        runOnUiThread(() -> {
+            String stamp = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
+            log.append(stamp).append("  ").append(message).append('\n');
+            if (logView != null) {
+                logView.setText(log.toString());
+            }
+        });
     }
 
     private int dp(int value) {
