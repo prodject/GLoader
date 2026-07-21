@@ -123,6 +123,16 @@ final class UsbAdbClient implements Closeable {
 
     String shell(String command) throws Exception {
         Stream stream = openStream("shell:" + command);
+        return readStreamToClose(stream);
+    }
+
+    String shellInteractive(String command) throws Exception {
+        Stream stream = openStream("shell:");
+        writeStream(stream, (command + "\nexit\n").getBytes(StandardCharsets.UTF_8));
+        return readStreamToClose(stream);
+    }
+
+    private String readStreamToClose(Stream stream) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         while (true) {
             Message message = readMessage();

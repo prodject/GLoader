@@ -37,7 +37,7 @@ jobs:
         run: |
           mkdir -p installer-phone/src/main/assets
           cp app/build/outputs/apk/release/app-release.apk installer-phone/src/main/assets/GLoader-${VERSION}.apk
-          cp build/installer-helper/gloader-install-helper.jar installer-phone/src/main/assets/gloader-install-helper-${VERSION}.jar
+          cp build/installer-helper/gloader-installer.dex installer-phone/src/main/assets/gloader-installer-${VERSION}.dex
 
       - name: Build phone installer APK
         run: gradle --no-daemon :installer-phone:assembleRelease
@@ -45,7 +45,7 @@ jobs:
       - name: Name artifact
         run: |
           cp app/build/outputs/apk/release/app-release.apk "GLoader-${VERSION}.apk"
-          cp build/installer-helper/gloader-install-helper.jar "gloader-install-helper-${VERSION}.jar"
+          cp build/installer-helper/gloader-installer.dex "gloader-installer-${VERSION}.dex"
           cp installer-phone/build/outputs/apk/release/installer-phone-release.apk "GLoader-installer-${VERSION}.apk"
 
       - uses: actions/upload-artifact@v4
@@ -53,10 +53,10 @@ jobs:
           name: GLoader-${{ env.VERSION }}
           path: |
             GLoader-${{ env.VERSION }}.apk
-            gloader-install-helper-${{ env.VERSION }}.jar
+            gloader-installer-${{ env.VERSION }}.dex
             GLoader-installer-${{ env.VERSION }}.apk
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v${VERSION}" "GLoader-${VERSION}.apk" "gloader-install-helper-${VERSION}.jar" "GLoader-installer-${VERSION}.apk" --title "GLoader ${VERSION}" --generate-notes
+        run: gh release create "v${VERSION}" "GLoader-${VERSION}.apk" "gloader-installer-${VERSION}.dex" "GLoader-installer-${VERSION}.apk" --title "GLoader ${VERSION}" --generate-notes

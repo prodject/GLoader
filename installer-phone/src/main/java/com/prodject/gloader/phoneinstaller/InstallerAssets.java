@@ -23,7 +23,7 @@ final class InstallerAssets {
     static InstallerAssets from(Context context) throws Exception {
         AssetManager assets = context.getAssets();
         String apk = find(assets, ".apk");
-        String helper = find(assets, ".jar");
+        String helper = find(assets, ".dex");
         return new InstallerAssets(apk, size(assets, apk), helper, size(assets, helper));
     }
 
@@ -53,7 +53,7 @@ final class InstallerAssets {
     }
 
     File copyHelperToCache(Context context) throws Exception {
-        return copyAssetToCache(context, helperName, "gloader-install-helper.jar");
+        return copyAssetToCache(context, helperName, "installer.dex");
     }
 
     private static File copyAssetToCache(Context context, String assetName, String outputName) throws Exception {

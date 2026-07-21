@@ -3,11 +3,16 @@ set -eu
 
 PACKAGE="com.prodject.gloader"
 REMOTE_APK="/data/local/tmp/GLoader.apk"
-REMOTE_HELPER="/data/local/tmp/gloader-install-helper.jar"
-HELPER_CLASS="com.prodject.gloader.installer.InstallHelper"
+REMOTE_HELPER="/data/local/tmp/installer.dex"
+HELPER_CLASS="Installer"
 REINSTALL_ON_SIGNATURE_MISMATCH=0
 APK="${1:-}"
 HELPER="${GLOADER_INSTALL_HELPER:-}"
+
+adb_shell_stdin() {
+    command_text="$1"
+    printf '%s\nexit\n' "$command_text" | adb shell
+}
 
 if [ "${1:-}" = "--replace-incompatible" ]; then
     REINSTALL_ON_SIGNATURE_MISMATCH=1
@@ -26,7 +31,7 @@ if [ -z "$APK" ] || [ ! -f "$APK" ]; then
 fi
 
 if [ -z "$HELPER" ]; then
-    HELPER=$(ls -1t ./gloader-install-helper*.jar ./build/installer-helper/gloader-install-helper.jar 2>/dev/null | head -n 1 || true)
+    HELPER=$(ls -1t ./gloader-installer*.dex ./build/installer-helper/gloader-installer.dex 2>/dev/null | head -n 1 || true)
 fi
 
 echo "Waiting for the short ADB window..."
@@ -41,7 +46,7 @@ if [ -n "$HELPER" ] && [ -f "$HELPER" ]; then
 
     echo "Installing GLoader through PackageInstaller helper..."
     set +e
-    INSTALL_OUTPUT=$(adb shell sh -c "'CLASSPATH=$REMOTE_HELPER exec app_process /system/bin $HELPER_CLASS $REMOTE_APK $PACKAGE'" 2>&1)
+    INSTALL_OUTPUT=$(adb_shell_stdin "CLASSPATH=$REMOTE_HELPER app_process /system/bin $HELPER_CLASS $REMOTE_APK" 2>&1)
     INSTALL_STATUS=$?
     set -e
 else
@@ -62,7 +67,7 @@ if [ "$INSTALL_STATUS" -ne 0 ]; then
             adb shell pm clear --user 0 "$PACKAGE" >/dev/null 2>&1 || true
             adb shell pm uninstall --user 0 "$PACKAGE" >/dev/null 2>&1 || adb shell pm uninstall "$PACKAGE" >/dev/null 2>&1 || true
             if [ -n "$HELPER" ] && [ -f "$HELPER" ]; then
-                adb shell sh -c "'CLASSPATH=$REMOTE_HELPER exec app_process /system/bin $HELPER_CLASS $REMOTE_APK $PACKAGE'"
+                adb_shell_stdin "CLASSPATH=$REMOTE_HELPER app_process /system/bin $HELPER_CLASS $REMOTE_APK"
             else
                 adb shell pm install --user 0 -r -d -g "$REMOTE_APK"
             fi

@@ -13,7 +13,7 @@ final class AdbInstallRunner {
     private static final String ACTION_USB_PERMISSION =
             "com.prodject.gloader.phoneinstaller.USB_PERMISSION";
     private static final String REMOTE_APK = "/data/local/tmp/GLoader.apk";
-    private static final String REMOTE_HELPER = "/data/local/tmp/gloader-install-helper.jar";
+    private static final String REMOTE_HELPER = "/data/local/tmp/installer.dex";
     private static final String PACKAGE = "com.prodject.gloader";
 
     interface Logger {
@@ -46,9 +46,8 @@ final class AdbInstallRunner {
             logger.log("Pushing helper...");
             client.push(helper, REMOTE_HELPER, 0644);
             logger.log("Running PackageInstaller helper...");
-            String helperOutput = client.shell("sh -c 'CLASSPATH=" + REMOTE_HELPER
-                    + " exec app_process /system/bin com.prodject.gloader.installer.InstallHelper "
-                    + REMOTE_APK + " " + PACKAGE + "'");
+            String helperOutput = client.shellInteractive("CLASSPATH=" + REMOTE_HELPER
+                    + " app_process /system/bin Installer " + REMOTE_APK);
             logger.log(helperOutput.trim());
             logger.log("Checking package registration...");
             String path = client.shell("pm path " + PACKAGE);
